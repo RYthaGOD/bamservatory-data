@@ -1,0 +1,11 @@
+# Secrets. The capture node reads GITHUB_TOKEN and OPENAI_API_KEY from the
+# environment (Railway variables) — never from a file in the repo.
+.env
+.env.*
+
+# Local working state. The archive under raw/ IS tracked; these are not.
+*.tmp
+*.tmp.*
+*.keep.*
+.DS_Store
+Thumbs.db

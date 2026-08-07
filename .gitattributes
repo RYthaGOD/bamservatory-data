@@ -1,0 +1,19 @@
+# These files are authored on Windows but only ever execute inside a Linux
+# container. A CRLF line ending survives the checkout and turns the shebang into
+# `#!/usr/bin/env bash\r`, which fails as "bad interpreter" — so line endings are
+# pinned rather than left to core.autocrlf.
+*.sh      text eol=lf
+*.awk     text eol=lf
+Dockerfile text eol=lf
+*.json    text eol=lf
+*.md      text eol=lf
+SHA256SUMS text eol=lf
+
+# The seed bundle is verified by SHA-256 on restore; any transformation at all
+# would fail that check.
+*.gz      binary
+*.zst     binary
+
+# The archive is the primary record. Never let git touch its bytes.
+raw/**    binary
+MANIFEST.tsv text eol=lf
