@@ -15,12 +15,11 @@ ARCHIVE="$REPOS/archive"
 
 log() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*"; }
 
+. /app/pipeline/lib.sh
+
 # ── Dashboard ────────────────────────────────────────────────────────────────
 if [ -d "$SITE/.git" ]; then
-  # Reset to origin first: the working tree is long-lived on the volume, and a
-  # push that failed last cycle would otherwise leave a divergent local commit
-  # that quietly blocks every future publish.
-  git -C "$SITE" fetch --quiet origin && git -C "$SITE" reset --quiet --hard origin/HEAD
+  sync_repo "$SITE" || log "site: could not sync with origin — building on the local tree."
 
   node "$SITE/stats.js" --dir "$DIR" \
     && { node "$SITE/brief.js" || log "brief.js failed — publishing with the previous briefing."; } \
@@ -43,9 +42,9 @@ fi
 
 # ── Archive ──────────────────────────────────────────────────────────────────
 if [ -d "$ARCHIVE/.git" ]; then
-  git -C "$ARCHIVE" fetch --quiet origin && git -C "$ARCHIVE" reset --quiet --hard origin/HEAD
+  sync_repo "$ARCHIVE" || log "archive: could not sync with origin — skipping."
 
-  bash /app/pipeline/archive.sh
+  bash /app/pipeline/archive.sh || log "archive: archive.sh reported a failure."
 
   if [ -n "$(git -C "$ARCHIVE" status --porcelain)" ]; then
     git -C "$ARCHIVE" add raw MANIFEST.tsv

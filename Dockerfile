@@ -49,7 +49,8 @@ ENV CAPTURE_DIR=/data/capture \
     TICK_SECONDS=60 \
     PUBLISH_MINUTES=15 \
     SITE_REPO=https://github.com/RYthaGOD/bamservatory.git \
-    ARCHIVE_REPO=https://github.com/RYthaGOD/bamservatory-data.git
+    ARCHIVE_REPO=https://github.com/RYthaGOD/bamservatory-data.git \
+    ARCHIVE_URL=https://github.com/RYthaGOD/bamservatory-data
 
 # tini reaps the detached publish subshells; without it they accumulate as
 # zombies over a long-lived capture loop.

@@ -109,6 +109,12 @@ Railway service, Dockerfile build, volume mounted at `/data`.
 | `CAPTURE_DIR` | Default `/data/capture` |
 | `TICK_SECONDS` | Default `60` |
 | `PUBLISH_MINUTES` | Default `15` |
+| `ARCHIVE_URL` | Stamped into `metrics.json` provenance. Unset publishes `null` |
+| `BAM_NET_REF` | Set from the Dockerfile build arg; names the collector build in provenance |
+
+`ARCHIVE_URL` and `BAM_NET_REF` default to `null` rather than to hardcoded
+values, so a pipeline that has not been configured publishes "not known" instead
+of a claim that cannot be checked.
 
 The collector is pinned by commit in the Dockerfile (`BAM_NET_REF`), not tracked
 to a branch. A capture pipeline whose binary can change underneath it cannot

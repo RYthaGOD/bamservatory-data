@@ -41,10 +41,25 @@ mkdir -p "$ARCHIVE/raw"
 # captured would be archived incomplete and its hash would change tomorrow,
 # which is exactly the property the manifest exists to rule out.
 #
-# ts is always the first field, so the date is a fixed-offset prefix. Matching on
-# that rather than parsing JSON keeps this linear and cheap on a large log.
-days=$(cut -c9-18 "$LOG" | grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' | sort -u | grep -v "^$today$")
-[ -z "$days" ] && exit 0
+# ts is always the first field, so the date is a fixed-offset prefix: a record
+# opens `{"ts":"2026-06-20T...` and the date begins at column 8. Matching on that
+# rather than parsing JSON keeps this linear and cheap on a large log. The regex
+# is a guard, not a parser — if the record shape ever changes, no day matches and
+# archiving stops rather than writing mislabelled files.
+days=$(cut -c8-17 "$LOG" | grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' | sort -u | grep -v "^$today$")
+
+if [ -z "$days" ]; then
+  # Having nothing to archive is normal — on the first day, or between the last
+  # archived day and midnight. Having nothing *parseable* is not: it means the
+  # record shape moved and this script would go on exiting 0 forever while the
+  # archive quietly stopped advancing. Fail loudly instead of silently.
+  if [ -s "$LOG" ] && ! cut -c8-17 "$LOG" | grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'; then
+    echo "$(date -u +%FT%TZ) archive ERROR: no parseable date prefix in $LOG." >&2
+    echo "$(date -u +%FT%TZ) archive ERROR: capture record format has changed — archiving is STALLED." >&2
+    exit 1
+  fi
+  exit 0
+fi
 
 archived_any=0
 for day in $days; do

@@ -4,11 +4,14 @@
 # Run this against a clone of this repo. It needs no credentials, no access to
 # the capture node, and no cooperation from the operator — which is the point.
 #
-#   ./verify.sh                    # check every archived day
-#   ./verify.sh 2026-06-20         # check one day
-#   ./verify.sh --rebuild <dir>    # also rebuild the CSVs and compare metrics
+#   ./verify.sh                # check every archived day
+#   ./verify.sh 2026-06-20     # check one day
 #
-# Requires: sha256sum, zstd, gawk.
+# Checks three things per day: that the file still hashes to what the manifest
+# recorded, that its contents match the recorded record count and boundary
+# timestamps, and what capture coverage it actually achieved.
+#
+# Requires: sha256sum, zstd, awk.
 
 set -u
 
@@ -27,7 +30,7 @@ while IFS=$'\t' read -r sha rel records first_ts last_ts archived_at collector; 
   [ "$sha" = "sha256" ] && continue
   case "$rel" in raw/*) ;; *) continue ;; esac
   day=$(echo "$rel" | sed 's|raw/||; s|\.jsonl\.zst$||; s|/|-|g')
-  [ -n "$target" ] && [ "$target" != "--rebuild" ] && [ "$day" != "$target" ] && continue
+  [ -n "$target" ] && [ "$day" != "$target" ] && continue
 
   if [ ! -f "$ROOT/$rel" ]; then
     echo "MISSING  $day  ($rel is in the manifest but not in the tree)"
@@ -69,7 +72,7 @@ while IFS=$'\t' read -r sha rel records first_ts last_ts archived_at collector; 
   [ "$sha" = "sha256" ] && continue
   case "$rel" in raw/*) ;; *) continue ;; esac
   day=$(echo "$rel" | sed 's|raw/||; s|\.jsonl\.zst$||; s|/|-|g')
-  [ -n "$target" ] && [ "$target" != "--rebuild" ] && [ "$day" != "$target" ] && continue
+  [ -n "$target" ] && [ "$day" != "$target" ] && continue
   pct=$(awk -v r="$records" 'BEGIN{ printf "%.1f", (r/1440)*100 }')
   printf '  %s  %5s / 1440  %5s%%\n' "$day" "$records" "$pct"
 done < "$MANIFEST"

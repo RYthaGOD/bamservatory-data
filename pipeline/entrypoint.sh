@@ -44,10 +44,12 @@ git config --global credential.helper store
 # ── Working clones ───────────────────────────────────────────────────────────
 # Both live on the volume so a redeploy resumes instead of re-cloning, and so a
 # publish interrupted mid-push leaves a recoverable working tree.
+. /app/pipeline/lib.sh
+
 clone_or_update() {
   local url="$1" dir="$2"
   if [ -d "$dir/.git" ]; then
-    git -C "$dir" fetch --quiet origin && git -C "$dir" reset --quiet --hard origin/HEAD
+    sync_repo "$dir"
   else
     log "cloning $url → $dir"
     git clone --quiet "$url" "$dir"
