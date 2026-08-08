@@ -79,6 +79,22 @@ if [ ! -s "$CAPTURE_DIR/summary.csv" ] && [ -d "$SEED" ]; then
     # Churn compares the last two captures, so the raw log needs those two
     # records or the first tick after cutover reports a spurious node-set change.
     gzip -dc "$SEED/ticks.tail.jsonl.gz"      > "$CAPTURE_DIR/ticks.jsonl"
+
+    # Those two records are continuity scaffolding, not a day this node
+    # captured. Without a watermark covering them, archive.sh sees a completed
+    # UTC day holding 2 records and publishes it as such — a manifest entry
+    # claiming 2/1440 coverage for a day that in reality was fully captured
+    # elsewhere. That is a false statement about the record, which is precisely
+    # what the archive exists to make impossible. Mark the seed's own day as
+    # already archived so only genuinely locally-captured days are published.
+    seed_day=$(tail -n1 "$CAPTURE_DIR/ticks.jsonl" | cut -c8-17)
+    case "$seed_day" in
+      [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9])
+        echo "$seed_day" > "$CAPTURE_DIR/.archived_through"
+        log "seed spans $seed_day — marked archived so the partial tail is never published as a day"
+        ;;
+    esac
+
     log "restored: $(wc -l < "$CAPTURE_DIR/summary.csv") series rows, from $(sed -n '2p' "$CAPTURE_DIR/summary.csv" | cut -d, -f1)"
   else
     log "FATAL: seed checksums do not verify — refusing to bootstrap from it."
