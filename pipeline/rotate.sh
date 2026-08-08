@@ -36,18 +36,42 @@ RETAIN_VAL_DAYS="${RETAIN_VAL_DAYS:-3}"
 size_mb() { [ -f "$1" ] && echo $(( $(stat -c%s "$1") / 1048576 )) || echo 0; }
 
 # ── ticks.jsonl ──────────────────────────────────────────────────────────────
-# Only trim past the archive watermark. Without an archived day behind us,
-# trimming would destroy the only copy of a capture window.
-if [ "$(size_mb "$LOG")" -gt "$TICKS_TRIM_ABOVE_MB" ] && [ -s "$WATERMARK" ]; then
+# Discard only what is already published, and nothing else.
+#
+# This is the only code in the system that destroys raw records, and they have
+# no other copy. An earlier version checked merely that the watermark file
+# existed and then kept the last N records regardless of what it said — so if
+# publishing stalled for longer than N records' worth of time (an expired token,
+# a GitHub outage), rotation would delete days that had never been archived. The
+# capture log would keep looking healthy while the history quietly went missing.
+#
+# Records are kept when their day is *after* the last confirmed-published day.
+# A minimum tail is always retained regardless, because churn compares the last
+# two captures and flatten reads the last one.
+watermark=$(cat "$WATERMARK" 2>/dev/null | tr -d ' \t\r\n')
+if [ "$(size_mb "$LOG")" -gt "$TICKS_TRIM_ABOVE_MB" ] && [ -n "$watermark" ]; then
   keep="$LOG.keep.$$"
-  if tail -n "$RETAIN_TICKS" "$LOG" > "$keep" 2>/dev/null && [ -s "$keep" ]; then
+  # ts is a fixed-offset prefix: `{"ts":"2026-08-09T...` puts the day at col 8.
+  awk -v w="$watermark" 'substr($0,8,10) > w' "$LOG" > "$keep" 2>/dev/null
+
+  kept=$(wc -l < "$keep" 2>/dev/null || echo 0)
+  if [ "$kept" -lt 2 ]; then
+    # Everything is published. Keep a short tail anyway so the next tick has
+    # something to compare against, rather than reporting a spurious node-set
+    # change on a log that starts empty.
+    tail -n "$RETAIN_TICKS" "$LOG" > "$keep" 2>/dev/null
+    kept=$(wc -l < "$keep" 2>/dev/null || echo 0)
+  fi
+
+  if [ "$kept" -ge 2 ]; then
     # Rename is atomic within the volume, so a crash mid-rotation leaves either
     # the old log or the new one — never a truncated file the collector would
     # then append a valid record onto.
     mv "$keep" "$LOG"
-    echo "$(date -u +%FT%TZ) rotated ticks.jsonl → last $RETAIN_TICKS records (archived through $(cat "$WATERMARK"))" >> "$DIR/ticks.log"
+    echo "$(date -u +%FT%TZ) rotated ticks.jsonl → $kept records after $watermark" >> "$DIR/ticks.log"
   else
     rm -f "$keep"
+    echo "$(date -u +%FT%TZ) ticks.jsonl rotation SKIPPED — refusing to leave fewer than 2 records" >> "$DIR/ticks.log"
   fi
 fi
 
