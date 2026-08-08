@@ -98,7 +98,17 @@ push_check "$REPO_DIR/archive" "${ARCHIVE_REPO}" || true
 # exists the branch is skipped, so a restart never overwrites live capture with
 # a stale bootstrap.
 SEED="$REPO_DIR/archive/seed"
-if [ ! -s "$CAPTURE_DIR/summary.csv" ] && [ -d "$SEED" ]; then
+VANTAGE="${VANTAGE:-primary}"
+
+# A witness must never restore the seed. The seed is the primary's history, and
+# importing it would have the witness assert, in its own archive, that it
+# observed weeks of activity it was not running for. The entire value of a
+# second vantage is that it saw things independently; a witness bootstrapped
+# from the primary's record corroborates nothing but itself.
+if [ "$VANTAGE" != "primary" ] && [ ! -s "$CAPTURE_DIR/summary.csv" ]; then
+  log "vantage '$VANTAGE': witness — starting from empty, no seed restore."
+  log "vantage '$VANTAGE': its record begins at first capture and covers only what it saw."
+elif [ ! -s "$CAPTURE_DIR/summary.csv" ] && [ -d "$SEED" ]; then
   log "empty volume — restoring capture state from seed"
   if ( cd "$SEED" && sha256sum --quiet -c SHA256SUMS ); then
     gzip -dc "$SEED/summary.csv.gz"           > "$CAPTURE_DIR/summary.csv"
