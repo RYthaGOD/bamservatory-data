@@ -1,6 +1,14 @@
 # bamservatory-data
 
+[![verify](https://github.com/RYthaGOD/bamservatory-data/actions/workflows/verify.yml/badge.svg)](https://github.com/RYthaGOD/bamservatory-data/actions/workflows/verify.yml)
+
 The capture node and public raw archive behind [BAMservatory](https://rythagod.github.io/bamservatory/).
+
+That badge is the point of this repo in one line. It runs on GitHub's
+infrastructure, on a schedule, and checks three things the operator cannot
+quietly influence: every archived day still hashes to what the manifest
+recorded, the two vantages still agree, and the published dashboard has not gone
+stale. A red run is visible to anyone.
 
 This repo exists so that nothing on the dashboard has to be taken on trust. It
 holds the primary record — what the public BAM API returned, as captured — plus

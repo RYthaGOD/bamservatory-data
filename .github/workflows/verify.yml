@@ -1,0 +1,98 @@
+# Continuous proof, run by GitHub rather than by the operator.
+#
+# Everything this repo claims — that the archive is intact, that the two
+# vantages agree, that the published dashboard is actually fresh — has so far
+# been checkable only by someone who chose to clone the repo and run a script.
+# That is a weaker claim than it looks: the checks live on the same machines as
+# the thing being checked, and nobody is obliged to run them.
+#
+# Running them here puts the verification somewhere the operator does not
+# control the outcome, on a schedule, with a public pass/fail history. A red run
+# is visible to anyone, including people who never asked for it.
+
+name: verify
+
+on:
+  schedule:
+    # Every six hours. The archive only gains a file once per UTC day, so more
+    # frequent runs would mostly re-prove the same bytes; the staleness check
+    # below is what benefits from running often, and six hours is well inside
+    # the window in which a dead collector matters.
+    - cron: "17 */6 * * *"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  archive-integrity:
+    name: archive integrity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # verify.sh needs the real zstd binary, not Node's implementation, so that
+      # the check does not depend on the same runtime that wrote the files.
+      - name: install zstd
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zstd
+
+      - name: verify every archived day
+        run: |
+          chmod +x ./verify.sh
+          ./verify.sh
+
+  cross-vantage:
+    name: cross-vantage agreement
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # zstd support in node:zlib landed in 23.8. compare.mjs relies on it.
+          node-version: "24"
+
+      - name: compare vantages
+        run: node compare.mjs --all
+
+  freshness:
+    name: published data is current
+    runs-on: ubuntu-latest
+    steps:
+      - name: check the live endpoint has not gone stale
+        run: |
+          # A dead collector is invisible from the outside: the last good
+          # metrics.json keeps being served indefinitely, so the dashboard looks
+          # fine while the numbers quietly age. This is the dead-man's switch —
+          # if capture stops, this job goes red.
+          #
+          # Publishing runs on a ~15 minute throttle. 90 minutes tolerates a
+          # redeploy, a transient GitHub outage and a missed cycle without
+          # crying wolf, while still catching a genuine stall within the hour.
+          MAX_AGE_MIN=90
+          URL=https://rythagod.github.io/bamservatory/metrics.json
+
+          curl -fsSL "$URL" -o metrics.json
+          GENERATED=$(node -e "console.log(require('./metrics.json').generatedAt)")
+          AGE=$(node -e "console.log(Math.round((Date.now()-new Date('$GENERATED'))/60000))")
+
+          echo "generatedAt : $GENERATED"
+          echo "age         : ${AGE} min (limit ${MAX_AGE_MIN})"
+
+          # Also assert the provenance a consumer is told to rely on is present.
+          node -e "
+            const m = require('./metrics.json');
+            const fail = (s) => { console.error('MISSING: ' + s); process.exitCode = 1; };
+            if (m.schemaVersion !== 1) fail('schemaVersion 1');
+            if (!m.provenance?.collector) fail('provenance.collector');
+            if (!m.provenance?.archive) fail('provenance.archive');
+            for (const k of ['summary.csv','nodes.csv','detections.log'])
+              if (!String(m.provenance?.inputs?.[k] ?? '').startsWith('sha256:')) fail('digest for ' + k);
+            if (!process.exitCode) console.log('provenance block intact');
+          "
+
+          if [ "$AGE" -gt "$MAX_AGE_MIN" ]; then
+            echo "::error::published data is ${AGE} min old (limit ${MAX_AGE_MIN}). Capture or publishing has stalled."
+            exit 1
+          fi
