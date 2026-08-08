@@ -89,6 +89,33 @@ A Railway cron job would spawn a fresh container per run, and a volume admits
 only one active deployment — so capture runs as a service with an internal loop
 instead.
 
+### Two markers on the volume, and why they are separate
+
+They look similar and answer completely different questions. Collapsing them
+into one caused the archive to silently drop days.
+
+| Marker | Question | Written by | Read by |
+|---|---|---|---|
+| `.captured_from` | Which days predate this node? | `entrypoint.sh`, once at seed restore | `archive.sh` |
+| `.archived_through` | Which days are durably on GitHub? | `publish.sh`, only after a confirmed push | `rotate.sh` |
+
+`.captured_from` exists because the seed carries a couple of raw records purely
+so churn has something to compare against. Without it, `archive.sh` sees a
+completed UTC day holding two records and publishes a manifest entry claiming
+0.1% coverage for a day that was captured in full on the machine being migrated
+from.
+
+`.archived_through` gates trimming. `rotate.sh` discards raw records once they
+are archived, so if this advanced on anything less than a confirmed push, a
+failed push would leave the only copy of those records in a local commit that
+never left the container — and the next reset to origin would destroy it.
+
+An earlier version used one marker for both. A single failed push then advanced
+it, the next cycle reset the clone to origin, and `archive.sh` skipped the day
+as already handled: the day was lost permanently, from the artifact whose entire
+purpose is to be complete. Whether a day is *written* and whether it is
+*published* are different facts, and only the second one is safe to build on.
+
 ### Why the live files stay small
 
 The pipeline reads far less than it stores. `summary.csv` (the series),

@@ -27,7 +27,7 @@ set -u
 DIR="${CAPTURE_DIR:-/data/capture}"
 ARCHIVE="${REPO_DIR:-/data/repos}/archive"
 LOG="$DIR/ticks.jsonl"
-WATERMARK="$DIR/.archived_through"
+CAPTURED_FROM="$DIR/.captured_from"
 MANIFEST="$ARCHIVE/MANIFEST.tsv"
 
 [ -d "$ARCHIVE/.git" ] || { echo "archive repo not cloned — skipping"; exit 0; }
@@ -61,7 +61,11 @@ if [ -z "$days" ]; then
   exit 0
 fi
 
-watermark=$(cat "$WATERMARK" 2>/dev/null | tr -d ' \t\r\n')
+# Days at or before this were not captured by this node — they came in with the
+# seed, which carries only enough raw records for churn to have something to
+# compare against. Archiving them would publish a manifest entry claiming a
+# couple of records' coverage for a day that was captured in full elsewhere.
+captured_from=$(cat "$CAPTURED_FROM" 2>/dev/null | tr -d ' \t\r\n')
 
 archived_any=0
 for day in $days; do
@@ -69,19 +73,19 @@ for day in $days; do
   rel="raw/$y/$m/$d.jsonl.zst"
   out="$ARCHIVE/$rel"
 
-  # Never revisit a day at or before the watermark.
-  #
-  # File-existence alone is not sufficient: publish.sh resets this clone to
-  # origin at the start of every cycle, so any day whose push failed loses its
-  # file locally and would be regenerated on the next tick, forever. The
-  # watermark is on the volume and survives that reset, which is what makes it
-  # the authority on what has already been dealt with.
-  if [ -n "$watermark" ] && ! [ "$day" \> "$watermark" ]; then
+  if [ -n "$captured_from" ] && ! [ "$day" \> "$captured_from" ]; then
     continue
   fi
 
   # Already published: re-archiving would either be a no-op or a silent revision
   # of a day someone may already have verified. Skip and leave the manifest be.
+  #
+  # This check runs against a clone publish.sh has just reset to origin, so it
+  # reflects what is actually published rather than what this node once wrote.
+  # That is deliberate: if a push failed, the file is legitimately absent here
+  # and the day *should* be rebuilt and retried. An earlier version consulted a
+  # local watermark instead, which made a single failed push drop the day
+  # forever — the archive silently losing exactly what it exists to preserve.
   if [ -f "$out" ]; then
     continue
   fi
@@ -110,10 +114,10 @@ for day in $days; do
 
   echo "$(date -u +%FT%TZ) archived $day → $rel ($records records, sha ${sha:0:12})"
   archived_any=1
-
-  # Advance only after the day is fully written and hashed. rotate.sh trims
-  # nothing past this line, so a failure here costs disk, never data.
-  echo "$day" > "$WATERMARK"
 done
 
+# Deliberately does not advance .archived_through. Writing a day to disk here
+# says nothing about whether it reached GitHub, and rotate.sh trims the capture
+# log on the strength of that marker. Only publish.sh, which knows whether the
+# push succeeded, is entitled to move it.
 exit 0

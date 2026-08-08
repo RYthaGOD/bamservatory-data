@@ -119,8 +119,8 @@ if [ ! -s "$CAPTURE_DIR/summary.csv" ] && [ -d "$SEED" ]; then
     seed_day=$(tail -n1 "$CAPTURE_DIR/ticks.jsonl" | cut -c8-17)
     case "$seed_day" in
       [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9])
-        echo "$seed_day" > "$CAPTURE_DIR/.archived_through"
-        log "seed spans $seed_day — marked archived so the partial tail is never published as a day"
+        echo "$seed_day" > "$CAPTURE_DIR/.captured_from"
+        log "seed spans $seed_day — days up to it were captured elsewhere, never archive them here"
         ;;
     esac
 

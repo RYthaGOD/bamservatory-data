@@ -54,6 +54,16 @@ if [ -d "$ARCHIVE/.git" ]; then
     git -C "$ARCHIVE" commit --quiet -m "archive: ${added:-manifest update}"
     if git -C "$ARCHIVE" push --quiet; then
       log "archive: published ${added:-manifest update}"
+      # Now, and only now, is a day durably published. rotate.sh trims the
+      # capture log up to this marker, so advancing it on anything less than a
+      # confirmed push would discard raw records whose only other copy was a
+      # local commit that never left the container.
+      newest=$(ls "$ARCHIVE"/raw/*/*/*.jsonl.zst 2>/dev/null \
+        | sed 's|.*/raw/||; s|\.jsonl\.zst$||; s|/|-|g' | sort | tail -n1)
+      if [ -n "$newest" ]; then
+        echo "$newest" > "$DIR/.archived_through"
+        log "archive: durable through $newest"
+      fi
     else
       log "archive: push FAILED — will retry next cycle."
     fi
