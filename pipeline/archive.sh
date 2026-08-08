@@ -28,13 +28,26 @@ DIR="${CAPTURE_DIR:-/data/capture}"
 ARCHIVE="${REPO_DIR:-/data/repos}/archive"
 LOG="$DIR/ticks.jsonl"
 CAPTURED_FROM="$DIR/.captured_from"
-MANIFEST="$ARCHIVE/MANIFEST.tsv"
+
+# A second collector in another region writes its own record rather than merging
+# into the first one's. Two vantages that agree are evidence; two vantages
+# blended into a single file are just an assertion, because a disagreement would
+# already have been averaged away by the time anyone looked.
+VANTAGE="${VANTAGE:-primary}"
+if [ "$VANTAGE" = "primary" ]; then
+  RAW_REL="raw"
+  MANIFEST_REL="MANIFEST.tsv"
+else
+  RAW_REL="vantage/$VANTAGE/raw"
+  MANIFEST_REL="vantage/$VANTAGE/MANIFEST.tsv"
+fi
+MANIFEST="$ARCHIVE/$MANIFEST_REL"
 
 [ -d "$ARCHIVE/.git" ] || { echo "archive repo not cloned — skipping"; exit 0; }
 [ -s "$LOG" ] || exit 0
 
 today=$(date -u +%F)
-mkdir -p "$ARCHIVE/raw"
+mkdir -p "$ARCHIVE/$RAW_REL" "$(dirname "$MANIFEST")"
 [ -f "$MANIFEST" ] || printf 'sha256\tpath\trecords\tfirst_ts\tlast_ts\tarchived_at\tcollector\n' > "$MANIFEST"
 
 # Every distinct UTC day present in the log, except today's — a day still being
@@ -70,7 +83,7 @@ captured_from=$(cat "$CAPTURED_FROM" 2>/dev/null | tr -d ' \t\r\n')
 archived_any=0
 for day in $days; do
   y=${day:0:4}; m=${day:5:2}; d=${day:8:2}
-  rel="raw/$y/$m/$d.jsonl.zst"
+  rel="$RAW_REL/$y/$m/$d.jsonl.zst"
   out="$ARCHIVE/$rel"
 
   if [ -n "$captured_from" ] && ! [ "$day" \> "$captured_from" ]; then

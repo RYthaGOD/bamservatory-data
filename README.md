@@ -66,9 +66,24 @@ the archive itself.
 is that it exists at all, and that dependency is honest to name: for the past you
 are trusting an append-only record, not re-deriving from source.
 
-**Single-vantage capture.** All observations come from one collector. Two
-collectors in different regions cross-publishing would make a divergent vantage
-point detectable. Not yet implemented.
+**That the API told the same story to everyone.** Two collectors in separate
+regions record independently and publish separate archives, so a view served to
+only one of them is detectable:
+
+```bash
+node compare.mjs --all
+```
+
+Minute by minute, this checks that both vantages saw the same node set, the same
+validator population within tolerance, and the same BAM stake within tolerance.
+Stake and validator counts move continuously and the two never sample the same
+instant, so demanding equality there would report ordinary drift as divergence
+and make the check worthless. The node set is compared exactly — nodes join and
+leave rarely enough that a disagreement means something.
+
+Agreement across vantages is corroboration, not proof. Both collectors could be
+shown the same false view, and no number of vantages fixes that — only
+attestations do.
 
 ## Architecture
 
