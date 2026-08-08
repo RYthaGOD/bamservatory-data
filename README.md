@@ -74,9 +74,19 @@ the archive itself.
 is that it exists at all, and that dependency is honest to name: for the past you
 are trusting an append-only record, not re-deriving from source.
 
-**That the API told the same story to everyone.** Two collectors in separate
-regions record independently and publish separate archives, so a view served to
-only one of them is detectable:
+**That the API told the same story to everyone.** Three collectors record
+independently and publish separate archives, so a view served to only one of
+them is detectable:
+
+| vantage | region |
+|---|---|
+| primary | US East (Ashburn) |
+| `sin` | Singapore |
+| `ams` | Amsterdam |
+
+Three rather than two is a deliberate choice. With two, a disagreement tells you
+something is wrong but not which side is wrong. With three, a single divergent
+vantage can be identified rather than merely flagged.
 
 ```bash
 node compare.mjs --all
