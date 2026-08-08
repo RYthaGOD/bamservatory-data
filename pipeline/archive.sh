@@ -61,11 +61,24 @@ if [ -z "$days" ]; then
   exit 0
 fi
 
+watermark=$(cat "$WATERMARK" 2>/dev/null | tr -d ' \t\r\n')
+
 archived_any=0
 for day in $days; do
   y=${day:0:4}; m=${day:5:2}; d=${day:8:2}
   rel="raw/$y/$m/$d.jsonl.zst"
   out="$ARCHIVE/$rel"
+
+  # Never revisit a day at or before the watermark.
+  #
+  # File-existence alone is not sufficient: publish.sh resets this clone to
+  # origin at the start of every cycle, so any day whose push failed loses its
+  # file locally and would be regenerated on the next tick, forever. The
+  # watermark is on the volume and survives that reset, which is what makes it
+  # the authority on what has already been dealt with.
+  if [ -n "$watermark" ] && ! [ "$day" \> "$watermark" ]; then
+    continue
+  fi
 
   # Already published: re-archiving would either be a no-op or a silent revision
   # of a day someone may already have verified. Skip and leave the manifest be.
