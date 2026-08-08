@@ -105,7 +105,14 @@ for day in $days; do
 
   mkdir -p "$(dirname "$out")"
   tmp="$out.tmp.$$"
-  if ! grep "^{\"ts\":\"$day" "$LOG" | zstd -19 -q -o "$tmp" 2>/dev/null; then
+  # Sorted, so the archive is canonical regardless of the order records happen
+  # to sit in the capture log. Every line opens with the same `{"ts":"` prefix
+  # and the timestamps are fixed-width RFC 3339, so a lexicographic sort is a
+  # chronological one. This matters when a log has been spliced — a collector
+  # migration, a gap backfilled from another machine — where append order and
+  # capture order are not the same thing. It also makes first_ts/last_ts below
+  # true by construction rather than by luck.
+  if ! grep "^{\"ts\":\"$day" "$LOG" | sort | zstd -19 -q -o "$tmp" 2>/dev/null; then
     rm -f "$tmp"
     echo "$(date -u +%FT%TZ) archive FAILED for $day" >&2
     continue
