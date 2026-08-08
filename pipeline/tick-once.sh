@@ -73,5 +73,9 @@ PUB="$DIR/.last_publish"
 PUBLISH_MINUTES="${PUBLISH_MINUTES:-15}"
 if [ ! -f "$PUB" ] || find "$PUB" -maxdepth 0 -mmin "+$PUBLISH_MINUTES" 2>/dev/null | grep -q .; then
   touch "$PUB"
-  nohup bash /app/pipeline/publish.sh >> "$DIR/publish.log" 2>&1 </dev/null &
+  # tee rather than redirect: the file is the detailed record, but publish
+  # failures need to reach the container's own log stream too. Sending them only
+  # to a file on the volume is how a push that had been failing for hours stayed
+  # invisible while every other signal looked healthy.
+  nohup bash /app/pipeline/publish.sh 2>&1 | tee -a "$DIR/publish.log" &
 fi

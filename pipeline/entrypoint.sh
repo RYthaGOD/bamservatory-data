@@ -59,6 +59,35 @@ clone_or_update() {
 clone_or_update "${SITE_REPO}"    "$REPO_DIR/site"    || log "WARN: site repo unavailable at boot"
 clone_or_update "${ARCHIVE_REPO}" "$REPO_DIR/archive" || log "WARN: archive repo unavailable at boot"
 
+# ── Push preflight ───────────────────────────────────────────────────────────
+# A token that can read but not write is the worst failure this service has,
+# because everything looks healthy: the clone succeeds, capture runs, the volume
+# fills, the logs are clean. Only the publish fails, hours later, in a detached
+# subshell whose output goes to a file on the volume — so the dashboard silently
+# stops updating while every visible signal says fine.
+#
+# GitHub's API is no help here: a fine-grained PAT's own scope is not
+# introspectable, and the repo `permissions` block reports the *user's* rights,
+# not the token's. It will happily say push:true for a read-only token. The only
+# honest test is asking the server whether this credential may write, which is
+# what a dry-run push does.
+push_check() {
+  local dir="$1" label="$2"
+  [ -d "$dir/.git" ] || return 0
+  if git -C "$dir" push --dry-run origin HEAD >/dev/null 2>&1; then
+    log "preflight: $label writable"
+  else
+    log "PREFLIGHT FAILED: cannot push to $label."
+    log "PREFLIGHT FAILED: capture will run and the volume will stay healthy, but"
+    log "PREFLIGHT FAILED: nothing will be published until this is fixed."
+    log "PREFLIGHT FAILED: check GITHUB_TOKEN has Contents: Read and write on this repo,"
+    log "PREFLIGHT FAILED: and that it has not expired."
+    return 1
+  fi
+}
+push_check "$REPO_DIR/site"    "${SITE_REPO}"    || true
+push_check "$REPO_DIR/archive" "${ARCHIVE_REPO}" || true
+
 # ── Seed restore ─────────────────────────────────────────────────────────────
 # summary.csv is the series: every point the dashboard plots comes from it. An
 # empty volume would still run, but `window.from` would restart at today and the
