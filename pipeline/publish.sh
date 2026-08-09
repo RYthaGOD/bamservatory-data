@@ -48,9 +48,67 @@ else
   log "site: repo not cloned — skipping."
 fi
 
+# ── Seed refresh ─────────────────────────────────────────────────────────────
+# The seed is what a fresh volume restores from, and it only ever gets older.
+# Frozen at the migration it would, after six months of running, silently roll
+# the published series back six months on the first volume loss — the recovery
+# path quietly becoming the thing that loses the data.
+#
+# It cannot simply be rebuilt from the archive at boot instead: reflattening
+# fifty days of raw capture takes longer than a deploy should, and grows.
+#
+# So it is refreshed here, weekly, and kept small. summary.csv is carried whole
+# because it *is* the series; nodes.csv only as a tail, since every consumer now
+# tail-reads it; validators.csv not at all, because one tick rebuilds it.
+refresh_seed() {
+  local seed="$ARCHIVE/seed"
+  [ -d "$ARCHIVE/.git" ] || return 0
+  [ -s "$DIR/summary.csv" ] || return 0
+
+  # Weekly. Frequent enough that a restore loses days rather than months, rare
+  # enough that the repo does not fill with near-identical snapshots.
+  if [ -f "$seed/SHA256SUMS" ] && [ -z "$(find "$seed/SHA256SUMS" -mtime +7 2>/dev/null)" ]; then
+    return 0
+  fi
+
+  local latest node_rows tmp
+  latest=$(tail -n1 "$DIR/summary.csv" | cut -d, -f1)
+  tmp="$seed.new.$$"
+  rm -rf "$tmp"; mkdir -p "$tmp"
+
+  gzip -9 -c "$DIR/summary.csv"                     > "$tmp/summary.csv.gz"
+  tail -n 5000 "$DIR/nodes.csv" | gzip -9 -c        > "$tmp/nodes.csv.gz"
+  gzip -9 -c "$DIR/detections.log"                  > "$tmp/detections.log.gz"
+  [ -f "$DIR/detections_replay.log" ] && gzip -9 -c "$DIR/detections_replay.log" > "$tmp/detections_replay.log.gz"
+  tail -n 2 "$DIR/ticks.jsonl" | gzip -9 -c         > "$tmp/ticks.tail.jsonl.gz"
+
+  # The node tail has to reach the newest summary row, or a restore comes up
+  # with a series but no topology: no nodes, no regions, every Nakamoto
+  # coefficient zero. Since a seed is only ever read during a disaster, a broken
+  # one is discovered at the worst possible moment — so it is checked now, while
+  # a good copy still exists to fall back on.
+  node_rows=$(gzip -dc "$tmp/nodes.csv.gz" | grep -c "^$latest," || true)
+  if [ "${node_rows:-0}" -lt 1 ]; then
+    rm -rf "$tmp"
+    log "seed refresh ABORTED — node tail does not cover $latest; keeping previous seed."
+    return 0
+  fi
+
+  ( cd "$tmp" && sha256sum ./*.gz | sed 's|\./||' > SHA256SUMS )
+  rm -rf "$seed"; mv "$tmp" "$seed"
+  log "seed refreshed through $latest ($node_rows node rows for the latest snapshot)"
+}
+
 # ── Archive ──────────────────────────────────────────────────────────────────
 if [ -d "$ARCHIVE/.git" ]; then
   sync_repo "$ARCHIVE" || log "archive: could not sync with origin — skipping."
+
+  # After the reset, never before it: sync_repo resets the clone hard, so a seed
+  # written earlier in this cycle would be discarded before it could be staged.
+  #
+  # Only the primary owns the seed. A witness holds its own partial history and
+  # would overwrite the bootstrap with a record that starts weeks later.
+  [ "$VANTAGE" = "primary" ] && refresh_seed
 
   bash /app/pipeline/archive.sh || log "archive: archive.sh reported a failure."
 
@@ -64,6 +122,10 @@ if [ -d "$ARCHIVE/.git" ]; then
 
   if [ -n "$(git -C "$ARCHIVE" status --porcelain)" ]; then
     git -C "$ARCHIVE" add "$RAW_REL" "$MANIFEST_REL"
+    # The primary also carries the bootstrap seed. Without staging it the
+    # refresh above would be written, reset away on the next cycle, rewritten,
+    # and never actually published — a weekly no-op that looks like it works.
+    [ "$VANTAGE" = "primary" ] && [ -d "$ARCHIVE/seed" ] && git -C "$ARCHIVE" add seed
     # The commit message names the days added, so the archive's own history is
     # readable without decompressing anything.
     added=$(git -C "$ARCHIVE" diff --cached --name-only -- "$RAW_REL" \
