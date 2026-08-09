@@ -105,6 +105,31 @@ const loadDay = (rel, day) => {
   return byMinute;
 };
 
+// Neighbouring minutes, used to build a local envelope.
+//
+// The vantages tick on independent clocks and can sample tens of seconds apart.
+// BAM stake moves continuously — validators connect and disconnect, and a single
+// large one shifts the total by over a million SOL in a minute. Comparing two
+// instants for near-equality therefore reports ordinary volatility as
+// disagreement: observed in the first real run, where both vantages reported
+// byte-identical stake whenever the value was stable, and differed only across a
+// three-minute window in which the validator count went 371→374→371.
+//
+// So a reading is judged against the range the other vantage actually observed
+// either side of that minute. A value inside that range is consistent with
+// having sampled the same reality at a different moment. A value outside it is
+// not, and that is the thing worth alarming about — a vantage being served a
+// view the others never saw at all.
+const around = (map, min) => {
+  const t = new Date(min + ":00Z").getTime();
+  const out = [];
+  for (let d = -1; d <= 1; d++) {
+    const k = new Date(t + d * 60000).toISOString().slice(0, 16);
+    if (map.has(k)) out.push(map.get(k));
+  }
+  return out;
+};
+
 const compareDay = (day, aRel, bRel) => {
   const A = loadDay(aRel, day), B = loadDay(bRel, day);
   if (!A || !B) return null;
@@ -115,20 +140,37 @@ const compareDay = (day, aRel, bRel) => {
 
   for (const min of shared) {
     const a = A.get(min), b = B.get(min);
+    const nearA = around(A, min), nearB = around(B, min);
     const problems = [];
 
-    if (a.nodes.join(",") !== b.nodes.join(",")) {
+    // Node sets change rarely, so this stays close to exact — but a node
+    // appearing or vanishing mid-minute is real, so accept a match against any
+    // reading A took nearby.
+    //
+    // Only B is judged against A's window, never the reverse. An earlier version
+    // also passed the minute when A's set matched anything near B, which meant a
+    // single forged minute was excused by its own untouched neighbours: a
+    // witness hiding an entire region went undetected in testing. One side has
+    // to be the reference or nothing is being checked.
+    const bKey = b.nodes.join(",");
+    if (!nearA.some((x) => x.nodes.join(",") === bKey)) {
       const missA = b.nodes.filter((n) => !a.nodes.includes(n));
       const missB = a.nodes.filter((n) => !b.nodes.includes(n));
       problems.push(`node set differs${missA.length ? ` (+${missA.join("|")} in B)` : ""}${missB.length ? ` (+${missB.join("|")} in A)` : ""}`);
     }
-    if (Math.abs(a.validators - b.validators) > VAL_TOL)
-      problems.push(`validators ${a.validators} vs ${b.validators}`);
 
-    const denom = Math.max(a.stake, b.stake) || 1;
-    const drift = (Math.abs(a.stake - b.stake) / denom) * 100;
-    if (drift > STAKE_TOL)
-      problems.push(`stake drift ${drift.toFixed(2)}% (${a.stake} vs ${b.stake})`);
+    const vLo = Math.min(...nearA.map((x) => x.validators));
+    const vHi = Math.max(...nearA.map((x) => x.validators));
+    if (b.validators < vLo - VAL_TOL || b.validators > vHi + VAL_TOL)
+      problems.push(`validators ${b.validators} outside A's ${vLo}–${vHi}`);
+
+    const sLo = Math.min(...nearA.map((x) => x.stake));
+    const sHi = Math.max(...nearA.map((x) => x.stake));
+    const margin = (sHi || 1) * (STAKE_TOL / 100);
+    if (b.stake < sLo - margin || b.stake > sHi + margin) {
+      const off = ((b.stake < sLo ? sLo - b.stake : b.stake - sHi) / (sHi || 1)) * 100;
+      problems.push(`stake ${b.stake} outside A's ${sLo.toFixed(0)}–${sHi.toFixed(0)} by ${off.toFixed(2)}%`);
+    }
 
     if (problems.length === 0) res.agree++;
     else if (res.issues.length < 10) res.issues.push({ min, problems });
