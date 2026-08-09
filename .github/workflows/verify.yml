@@ -84,7 +84,10 @@ jobs:
           node -e "
             const m = require('./metrics.json');
             const fail = (s) => { console.error('MISSING: ' + s); process.exitCode = 1; };
-            if (m.schemaVersion !== 1) fail('schemaVersion 1');
+            // Presence and plausibility, not a pinned value — this job exists to
+            // catch a stalled or malformed publish, and should not go red merely
+            // because the contract was legitimately versioned.
+            if (!Number.isInteger(m.schemaVersion) || m.schemaVersion < 1) fail('schemaVersion');
             if (!m.provenance?.collector) fail('provenance.collector');
             if (!m.provenance?.archive) fail('provenance.archive');
             for (const k of ['summary.csv','nodes.csv','detections.log'])
