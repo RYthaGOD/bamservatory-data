@@ -10,6 +10,22 @@
 #
 # Required -v vars: SUMMARY, NODES, VALS (output file paths).
 
+# Make a value safe to write into an unquoted CSV field.
+#
+# These outputs have no quoting or escaping — every consumer splits on commas
+# and reads fixed positions. A name carrying a comma therefore does not corrupt
+# itself, it shifts every field after it: node_stake_share and node_stake_hhi
+# would be read from the wrong columns and published as measurements.
+#
+# BAM names nodes {city}-mainnet-bam-{n}-tee and validator keys are base58, so
+# this should never fire. It exists because the failure is silent and lands in
+# the derived statistics rather than anywhere that would look wrong, and the
+# true value is preserved verbatim in the raw archive regardless.
+function csvsafe(s) {
+  gsub(/[,"\r\n]/, "_", s)
+  return s
+}
+
 {
   line = $0
   if (line ~ /^[ \t]*$/) next
@@ -50,8 +66,8 @@
   nn = split(nodes_seg, NA, /\},\{/)
   for (i = 1; i <= nn; i++) {
     el = NA[i]; if (el == "") continue
-    match(el, /"bam_node":"([^"]*)"/, m);            bn  = m[1]
-    match(el, /"region":"([^"]*)"/, m);              rg  = m[1]
+    match(el, /"bam_node":"([^"]*)"/, m);            bn  = csvsafe(m[1])
+    match(el, /"region":"([^"]*)"/, m);              rg  = csvsafe(m[1])
     match(el, /"connected_validators":([0-9]+)/, m); cv  = m[1]
     match(el, /"node_stake":([0-9.eE+-]+)/, m);      nst = m[1]
     ncount++
@@ -73,8 +89,8 @@
   vv = split(vals_seg, VA, /\},\{/)
   for (i = 1; i <= vv; i++) {
     el = VA[i]; if (el == "") continue
-    match(el, /"validator_pubkey":"([^"]*)"/, m); pk = m[1]
-    if (match(el, /"bam_node_connection":"([^"]*)"/, m)) conn = m[1]; else conn = ""
+    match(el, /"validator_pubkey":"([^"]*)"/, m); pk = csvsafe(m[1])
+    if (match(el, /"bam_node_connection":"([^"]*)"/, m)) conn = csvsafe(m[1]); else conn = ""
     match(el, /"stake":([0-9.eE+-]+)/, m);            stk  = m[1]
     match(el, /"stake_percentage":([0-9.eE+-]+)/, m); spct = m[1]
     vcount++
