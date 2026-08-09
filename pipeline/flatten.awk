@@ -26,6 +26,24 @@
   vals_seg  = substr(line, vs + 16)                 # 16 = len('],"validators":[')
   sub(/\]\}[ \t]*$/, "", vals_seg)
 
+  # A capture that came back with no nodes at all is a degraded response, not an
+  # observation that BAM has no nodes. The public API returned exactly this 16
+  # times between 2026-07-30 and 2026-08-04: valid JSON, empty arrays, zero
+  # stake.
+  #
+  # Emitting a row for it put "BAM holds 0% of Solana stake" into the published
+  # series as though it were measured, which dragged the site's own minimum
+  # statistics to zero. Worse, the split below does not yield an empty list for
+  # an empty array — the leftover bracket survives as a single element — so the
+  # record was counted as one node with a blank name.
+  #
+  # The raw capture is still archived either way, so nothing is hidden: the
+  # empty response remains in the record, and the effect here is a gap in
+  # coverage, which is true, instead of a false measurement.
+  if (nodes_seg !~ /"bam_node"/) {
+    next
+  }
+
   # --- nodes ---
   ncount = 0; total_node_stake = 0; top_stake = -1; top_node = ""
   delete NB; delete NRG; delete NCV; delete NSS; delete NSN
