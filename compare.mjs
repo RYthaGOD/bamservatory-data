@@ -130,12 +130,45 @@ const around = (map, min) => {
   return out;
 };
 
-const compareDay = (day, aRel, bRel) => {
-  const A = loadDay(aRel, day), B = loadDay(bRel, day);
-  if (!A || !B) return null;
+const shiftDay = (day, n) => {
+  const d = new Date(day + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
 
-  const shared = [...A.keys()].filter((k) => B.has(k)).sort();
-  const res = { day, aOnly: A.size - shared.length, bOnly: B.size - shared.length,
+// A day's own file cannot supply neighbours for its first and last minute — they
+// live in the adjacent files. Without them the envelope at midnight is built
+// from fewer samples and is therefore narrower, which fails safe (it can only
+// over-report, never miss) but would still turn a public badge red over nothing.
+// So the boundary minutes are borrowed from the days either side.
+const withEdges = (rel, day) => {
+  const map = loadDay(rel, day);
+  if (!map) return null;
+  const prev = loadDay(rel, shiftDay(day, -1));
+  if (prev) {
+    const keys = [...prev.keys()].sort();
+    if (keys.length) map.set(keys[keys.length - 1], prev.get(keys[keys.length - 1]));
+  }
+  const next = loadDay(rel, shiftDay(day, 1));
+  if (next) {
+    const keys = [...next.keys()].sort();
+    if (keys.length) map.set(keys[0], next.get(keys[0]));
+  }
+  return map;
+};
+
+const compareDay = (day, aRel, bRel) => {
+  // Compared minutes come from the day itself; the envelope may reach one minute
+  // past either end, so borrowed edges are excluded from `shared` below.
+  const Aday = loadDay(aRel, day), Bday = loadDay(bRel, day);
+  if (!Aday || !Bday) return null;
+  const A = withEdges(aRel, day), B = withEdges(bRel, day);
+
+  // From the day's own minutes, never the borrowed edges — those exist only to
+  // give the first and last minute a two-sided envelope, and comparing them here
+  // would double-count them against the neighbouring day's own run.
+  const shared = [...Aday.keys()].filter((k) => Bday.has(k)).sort();
+  const res = { day, aOnly: Aday.size - shared.length, bOnly: Bday.size - shared.length,
                 compared: shared.length, agree: 0, issues: [] };
 
   for (const min of shared) {
