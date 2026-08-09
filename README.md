@@ -180,21 +180,38 @@ The collector is pinned by commit in the Dockerfile (`BAM_NET_REF`), not tracked
 to a branch. A capture pipeline whose binary can change underneath it cannot
 claim its history was gathered the same way throughout.
 
-### Seeding
+### Recovery
 
-Before first deploy, copy the existing capture state onto the volume so the
-series does not restart at today:
+A collector starting on an empty volume restores from [`seed/`](seed/), so the
+published series resumes where it left off instead of restarting at today.
 
-```
-summary.csv              4.6 MB   the series — every plotted point
-nodes.csv                 50 MB   region rollups
-detections.log            39 KB   event history
-detections_replay.log      2 KB   the validated 2026-06-24 rollover
-ticks.jsonl (tail)                 last ~2 records, for churn continuity
-```
+The primary rewrites that seed weekly from its own live state, and
+[`seed/THROUGH`](seed/THROUGH) records the capture timestamp it was built at —
+which is how far back a restore would land. Left frozen, a seed only ever gets
+older, and the recovery path eventually becomes the thing that destroys the
+history it exists to protect.
 
-`validators.csv` does not need seeding — it is derived, and only its tail is
-read.
+| file | why |
+|---|---|
+| `summary.csv.gz` | whole — it *is* the series |
+| `nodes.csv.gz` | tail only; every consumer tail-reads it |
+| `detections.log.gz` | event history, not derivable from raw captures |
+| `detections_replay.log.gz` | the validated 2026-06-24 rollover |
+| `ticks.tail.jsonl.gz` | two records, so churn has something to compare |
+| `THROUGH` | the seed's own age, in plain text |
+
+`validators.csv` is not seeded: it is derived and only its tail is read, so one
+capture rebuilds what matters.
+
+The seed is written to a temporary directory and moved into place only after its
+node tail is confirmed to reach the newest summary row. Without that overlap a
+restore comes up with a series and no topology — no nodes, no regions, every
+Nakamoto coefficient zero — and since a seed is read only during a disaster, the
+fault would surface at the worst possible moment.
+
+Rebuilding the derived files from `raw/` instead would be more elegant, and is
+the obvious thing to reach for, but reflattening the archive already takes longer
+than a deploy should and only grows.
 
 ## License
 
