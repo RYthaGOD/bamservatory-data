@@ -35,9 +35,20 @@ top_prev=$(tail -n2 "$SUMMARY" | head -n1 | cut -d, -f10)
 region_of() { printf '%s' "$1" | cut -d- -f1; }
 top_cur_region=$(region_of "$top_cur")
 
-# Sorted node name sets for the two most-recent captures
-nodes_cur=$(awk  -F, -v t="$ts_cur"  '$1==t{print $2}' "$NODES" | sort)
-nodes_prev=$(awk -F, -v t="$ts_prev" '$1==t{print $2}' "$NODES" | sort)
+# Sorted node name sets for the two most-recent captures.
+#
+# Read from a tail buffer rather than the whole file. nodes.csv gains one row
+# per node per capture — roughly 1.9 MB a day, unbounded — and this runs every
+# 60 seconds, so scanning all of it would grow into the tick budget and
+# eventually start costing captures. That is exactly how the original Windows
+# collector decayed to a third of its intended rate, and it was invisible until
+# the coverage figures were plotted.
+#
+# 4000 lines is ~260 captures at the current node count: far more than the two
+# this needs, and cheap to re-read every minute.
+NODES_TAIL=$(tail -n 4000 "$NODES")
+nodes_cur=$(printf '%s\n' "$NODES_TAIL" | awk -F, -v t="$ts_cur"  '$1==t{print $2}' | sort)
+nodes_prev=$(printf '%s\n' "$NODES_TAIL" | awk -F, -v t="$ts_prev" '$1==t{print $2}' | sort)
 
 new_nodes=$(comm -13 \
   <(printf '%s\n' "$nodes_prev") \
