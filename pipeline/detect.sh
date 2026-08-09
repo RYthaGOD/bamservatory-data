@@ -81,15 +81,25 @@ if [ "$top_cur" != "$top_prev" ] && [[ "$top_prev" != "top_node" && -n "$top_pre
   first_signal=none
   lead_min=0
   if [ -n "$cand" ]; then
-    lm=$(awk -v t1="$cand" -v t2="$ts_cur" 'BEGIN{
-      split(t1, a, /[-T:Z]/); split(t2, b, /[-T:Z]/)
-      e1 = a[2]*30*86400 + a[3]*86400 + a[4]*3600 + a[5]*60 + a[6]+0
-      e2 = b[2]*30*86400 + b[3]*86400 + b[4]*3600 + b[5]*60 + b[6]+0
-      print int((e2 - e1) / 60)
-    }')
-    if [ "${lm:-999}" -ge 0 ] && [ "${lm:-999}" -le "$LEAD_WINDOW" ]; then
-      first_signal="$cand"
-      lead_min="$lm"
+    # Real epoch seconds, not hand-rolled arithmetic.
+    #
+    # This previously computed the difference as month*30d + day + h:m:s, which
+    # is exact inside a month and wrong at every boundary: a signal 20 minutes
+    # before a cutover spanning month-end evaluated to -1420 minutes, and across
+    # a year-end to -519820, because the year component was never read at all.
+    #
+    # Negative values fail the lower bound below, so a genuine rollover landing
+    # within LEAD_WINDOW of a month boundary was recorded with first_signal=none
+    # and scored as a whale flip — the early-warning result quietly discarded in
+    # exactly the twelve hours a year when nothing looked wrong.
+    s1=$(date -u -d "$cand" +%s 2>/dev/null)
+    s2=$(date -u -d "$ts_cur" +%s 2>/dev/null)
+    if [ -n "$s1" ] && [ -n "$s2" ]; then
+      lm=$(( (s2 - s1) / 60 ))
+      if [ "$lm" -ge 0 ] && [ "$lm" -le "$LEAD_WINDOW" ]; then
+        first_signal="$cand"
+        lead_min="$lm"
+      fi
     fi
   fi
   printf '%s CUTOVER old=%s new=%s region=%s first_signal=%s lead_min=%d\n' \
