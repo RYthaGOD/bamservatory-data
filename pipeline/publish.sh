@@ -67,8 +67,20 @@ refresh_seed() {
 
   # Weekly. Frequent enough that a restore loses days rather than months, rare
   # enough that the repo does not fill with near-identical snapshots.
-  if [ -f "$seed/SHA256SUMS" ] && [ -z "$(find "$seed/SHA256SUMS" -mtime +7 2>/dev/null)" ]; then
-    return 0
+  #
+  # Age is taken from THROUGH — the capture timestamp the seed was built at —
+  # not from file mtime. Git does not record mtimes, so every sync_repo reset
+  # restamps the checked-out seed with the current time; an mtime test can never
+  # see a seed older than the last deploy, and the refresh would have been
+  # skipped forever while appearing to be scheduled.
+  local seed_through age_days
+  seed_through=$(cat "$seed/THROUGH" 2>/dev/null | tr -d ' \t\r\n')
+  if [ -n "$seed_through" ]; then
+    local s_epoch n_epoch
+    s_epoch=$(date -u -d "$seed_through" +%s 2>/dev/null || echo 0)
+    n_epoch=$(date -u +%s)
+    age_days=$(( (n_epoch - s_epoch) / 86400 ))
+    [ "$s_epoch" -gt 0 ] && [ "$age_days" -lt 7 ] && return 0
   fi
 
   local latest node_rows tmp
@@ -94,6 +106,10 @@ refresh_seed() {
     return 0
   fi
 
+  # Plain text, and deliberately outside SHA256SUMS: it is the throttle's clock,
+  # readable in the repo without decompressing anything, and says plainly how
+  # far back a restore from this seed would land.
+  printf '%s\n' "$latest" > "$tmp/THROUGH"
   ( cd "$tmp" && sha256sum ./*.gz | sed 's|\./||' > SHA256SUMS )
   rm -rf "$seed"; mv "$tmp" "$seed"
   log "seed refreshed through $latest ($node_rows node rows for the latest snapshot)"
