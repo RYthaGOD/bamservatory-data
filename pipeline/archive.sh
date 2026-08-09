@@ -99,8 +99,24 @@ for day in $days; do
   # and the day *should* be rebuilt and retried. An earlier version consulted a
   # local watermark instead, which made a single failed push drop the day
   # forever — the archive silently losing exactly what it exists to preserve.
+  #
+  # The manifest entry has to be present too, not just the file. archive.sh
+  # writes the day and appends its hash, but publish.sh commits them afterwards
+  # and runs detached — and a redeploy fires on every push to this repo. Killed
+  # in between, the untracked .zst survives the next reset to origin while the
+  # tracked manifest reverts without it. The day would then be skipped as
+  # "already archived", committed with no hash recorded, and never checked by
+  # verify.sh, which walks the manifest. An unverifiable day in an archive whose
+  # only purpose is verifiability.
   if [ -f "$out" ]; then
-    continue
+    if awk -F'\t' -v r="$rel" '$2==r{f=1} END{exit !f}' "$MANIFEST" 2>/dev/null; then
+      continue
+    fi
+    # Present but unrecorded. Output is deterministic — the day is sorted before
+    # compression — so regenerating restores the file/manifest pair byte for
+    # byte rather than revising anything.
+    echo "$(date -u +%FT%TZ) $day archived but unrecorded — regenerating manifest entry"
+    rm -f "$out"
   fi
 
   mkdir -p "$(dirname "$out")"
