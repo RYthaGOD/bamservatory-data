@@ -1,2 +1,3 @@
 ts,explorer_validators,kobe_running_bam,in_both,only_explorer,only_kobe,disputed_stake_sol,onchain_matched,stake_reported_sol,stake_onchain_sol,stake_abs_diff_sol,stake_max_rel_pct,bam_share_reported_pct,bam_share_onchain_pct
 2026-08-10T10:02:04Z,373,370,370,3,0,967563.32,371,140574916.85,140574916.90,0.05,0.0000,32.3902,32.3902
+2026-08-10T10:32:44Z,373,371,371,2,0,744254.76,371,140574916.85,140574916.90,0.05,0.0000,32.3902,32.3902
