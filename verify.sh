@@ -102,6 +102,33 @@ for MANIFEST in $MANIFESTS; do
     done < "$MANIFEST"
   fi
 
+  # ── 3. Continuity ─────────────────────────────────────────────────────────
+  # Everything above walks the manifest, so it can only judge days that were
+  # recorded. A day that was never archived at all leaves no entry to check and
+  # would pass silently — and that is exactly the shape a rotation fault takes,
+  # since rotation is the only thing that deletes raw captures. Absence has to be
+  # checked against the calendar, not against the manifest.
+  #
+  # A gap is not automatically a fault: a collector that was genuinely down for a
+  # day should show one. It is reported so a reader can tell the difference,
+  # rather than assumed either way.
+  if [ -z "$target" ] && [ "$ok" -gt 0 ]; then
+    days=$(awk -F'\t' 'NR>1 && $2!="" {
+      n=split($2, p, "/"); if (n<4) next
+      print p[n-2]"-"p[n-1]"-"substr(p[n],1,2)
+    }' "$MANIFEST" | sort)
+    first=$(echo "$days" | head -n1); last=$(echo "$days" | tail -n1)
+    gaps=0
+    if [ -n "$first" ] && [ -n "$last" ]; then
+      cur="$first"
+      while [ "$cur" != "$last" ]; do
+        echo "$days" | grep -qx "$cur" || { echo "  GAP      $cur  (no archive for this day)"; gaps=$((gaps + 1)); }
+        cur=$(date -u -d "$cur + 1 day" +%F 2>/dev/null) || break
+      done
+    fi
+    echo "  span $first → $last, $gaps day(s) with no archive"
+  fi
+
   total_ok=$((total_ok + ok))
   total_bad=$((total_bad + bad))
   total_missing=$((total_missing + missing))
