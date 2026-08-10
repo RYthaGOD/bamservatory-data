@@ -126,6 +126,16 @@ if [ -d "$ARCHIVE/.git" ]; then
   # would overwrite the bootstrap with a record that starts weeks later.
   [ "$VANTAGE" = "primary" ] && refresh_seed
 
+  # The cross-source verification series, published whole.
+  #
+  # It is the one artifact here that checks BAM rather than describing it, so it
+  # belongs in the open next to the captures it draws on. Small enough to carry
+  # entire — one row per half hour is a few KB a day — which keeps it trivially
+  # diffable: a reader can see every reading ever taken, not a rolling window.
+  if [ "$VANTAGE" = "primary" ] && [ -s "$DIR/verification.csv" ]; then
+    cp "$DIR/verification.csv" "$ARCHIVE/verification.csv"
+  fi
+
   bash /app/pipeline/archive.sh || log "archive: archive.sh reported a failure."
 
   # Each vantage owns its own subtree, so the two collectors never stage the
@@ -142,6 +152,7 @@ if [ -d "$ARCHIVE/.git" ]; then
     # refresh above would be written, reset away on the next cycle, rewritten,
     # and never actually published — a weekly no-op that looks like it works.
     [ "$VANTAGE" = "primary" ] && [ -d "$ARCHIVE/seed" ] && git -C "$ARCHIVE" add seed
+    [ "$VANTAGE" = "primary" ] && [ -f "$ARCHIVE/verification.csv" ] && git -C "$ARCHIVE" add verification.csv
     # The commit message names the days added, so the archive's own history is
     # readable without decompressing anything.
     added=$(git -C "$ARCHIVE" diff --cached --name-only -- "$RAW_REL" \

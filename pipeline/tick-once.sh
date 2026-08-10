@@ -66,6 +66,29 @@ bash /app/pipeline/detect.sh
 # nothing to do, so it runs every tick rather than on its own schedule.
 bash /app/pipeline/rotate.sh
 
+# Cross-source verification, on its own slower clock.
+#
+# Separate from capture because it is a different kind of measurement and a much
+# heavier one: it pulls the full Solana vote-account set and Jito's whole
+# validator table, so running it every minute would be rude to three services to
+# restate a figure that moves on the order of hours. It is also strictly
+# optional — capture is the irreplaceable part, and a verification run that
+# fails, times out or is unconfigured must never cost a snapshot.
+#
+# Primary only. A witness exists to corroborate the capture, and duplicating this
+# from three vantages would triple the load on other people's APIs to compute the
+# same answer from the same public data.
+VERIFY_MINUTES="${VERIFY_MINUTES:-30}"
+if [ "${VANTAGE:-primary}" = "primary" ] && [ -n "${SOLANA_RPC_URL:-}" ]; then
+  VER="$DIR/.last_verify"
+  if [ ! -f "$VER" ] || find "$VER" -maxdepth 0 -mmin "+$VERIFY_MINUTES" 2>/dev/null | grep -q .; then
+    touch "$VER"
+    node /app/pipeline/verify-sources.mjs --out "$DIR/verification.csv" \
+      >> "$DIR/verify.log" 2>&1 \
+      || echo "$(date -u +%FT%TZ) verification run failed (capture unaffected)" >> "$DIR/verify.log"
+  fi
+fi
+
 # Publish on a throttle, detached, so a slow push never delays the next capture.
 # The marker is touched up-front: a failed publish then waits out the window
 # instead of retrying every minute against a service that is already unhappy.
