@@ -175,7 +175,37 @@ const main = async () => {
     ((onchain / networkStake) * 100).toFixed(4),
   ].join(",");
 
-  if (!fs.existsSync(OUT)) fs.writeFileSync(OUT, HEADER + "\n");
+  // Migrate the file if its header no longer matches.
+  //
+  // Appending was previously conditional only on the file existing, so adding a
+  // column left every earlier row short and every later row long under a header
+  // that described neither. Readers index by column name, so the extra fields
+  // silently shifted meaning — `bam_share_reported_pct` began returning the
+  // headline stake, and the dashboard rendered two identical figures as though
+  // they were a comparison.
+  //
+  // Old rows are remapped by name and padded, so history survives a schema
+  // change instead of being reinterpreted by it.
+  if (fs.existsSync(OUT)) {
+    const lines = fs.readFileSync(OUT, "utf8").trim().split(/\r?\n/);
+    const oldHeader = lines[0] ?? "";
+    if (oldHeader !== HEADER) {
+      const oldCols = oldHeader.split(",");
+      const newCols = HEADER.split(",");
+      const migrated = lines.slice(1).map((l) => {
+        const cells = l.split(",");
+        // Rows written after a column was added are longer than the header they
+        // were appended under; those trailing values cannot be attributed to a
+        // name, so they are dropped rather than guessed at.
+        const byName = new Map(oldCols.map((c, i) => [c, cells[i] ?? ""]));
+        return newCols.map((c) => byName.get(c) ?? "").join(",");
+      });
+      fs.writeFileSync(OUT, [HEADER, ...migrated].join("\n") + "\n");
+      console.log(`  migrated ${migrated.length} rows to the current schema`);
+    }
+  } else {
+    fs.writeFileSync(OUT, HEADER + "\n");
+  }
   fs.appendFileSync(OUT, row + "\n");
   console.log(`  ${row}`);
 };
