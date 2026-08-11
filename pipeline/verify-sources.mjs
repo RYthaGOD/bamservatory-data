@@ -44,7 +44,8 @@ const HEADER = [
   // stake verification against the chain
   "onchain_matched", "stake_reported_sol", "stake_onchain_sol",
   "stake_abs_diff_sol", "stake_max_rel_pct",
-  // share of the whole network, both ways
+  // BAM's own published headline, and the same quantity derived from chain
+  "bam_headline_stake_sol", "bam_headline_share_pct",
   "bam_share_reported_pct", "bam_share_onchain_pct",
 ].join(",");
 
@@ -62,8 +63,12 @@ const rowsOf = (j) => Array.isArray(j) ? j : (j?.validators ?? Object.values(j ?
 const main = async () => {
   if (!RPC) die("no RPC endpoint. Set SOLANA_RPC_URL or pass --rpc.");
 
-  const [explorerRaw, kobeRaw, voteRaw] = await Promise.all([
+  const [explorerRaw, headlineRaw, kobeRaw, voteRaw] = await Promise.all([
     getJSON(`${BAM_API}/validators`),
+    // BAM's own published totals. Worth fetching separately rather than summing
+    // the validator list: this is the number BAM actually states about itself,
+    // and the whole point is to check *their* claim, not a restatement of it.
+    getJSON(`${BAM_API}/bam_stake`),
     getJSON(`${KOBE}/api/v1/validators`),
     getJSON(RPC, {
       method: "POST",
@@ -81,6 +86,12 @@ const main = async () => {
   if (!explorer.length) die("BAM explorer returned no validators");
   if (!kobe.length) die("Kobe returned no validators");
   if (!vote?.current?.length) die("RPC returned no vote accounts");
+  // Guarded rather than defaulted. A missing headline written as 0 would publish
+  // "BAM claims 0% of stake" as a measurement, which is the same fault as
+  // recording an empty API response as an observation.
+  const headStake = Number(headlineRaw?.bam_stake);
+  const headShare = Number(headlineRaw?.bam_stake_percentage);
+  if (!(headStake > 0) || !(headShare > 0)) die("BAM /bam_stake returned no usable headline");
 
   // ── membership ────────────────────────────────────────────────────────────
   const kobeBam = new Set(kobe.filter((r) => r.running_bam === true).map((r) => r.identity_account));
@@ -121,6 +132,11 @@ const main = async () => {
     onlyExplorer.length, onlyKobe.length, disputedStake.toFixed(2),
     matched, reported.toFixed(2), onchain.toFixed(2),
     Math.abs(reported - onchain).toFixed(2), maxRel.toFixed(4),
+    // BAM's published headline, verbatim. Its share uses BAM's own denominator,
+    // which is not identical to getVoteAccounts' — that difference is precisely
+    // what makes comparing them a real check rather than a restatement.
+    headStake.toFixed(2),
+    headShare.toFixed(4),
     ((reported / networkStake) * 100).toFixed(4),
     ((onchain / networkStake) * 100).toFixed(4),
   ].join(",");
