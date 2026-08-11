@@ -41,9 +41,11 @@ const HEADER = [
   // membership cross-check
   "explorer_validators", "kobe_running_bam", "in_both",
   "only_explorer", "only_kobe", "disputed_stake_sol",
+  // source health — kobe_total is what proves the list was not truncated
+  "kobe_total_validators", "chain_validators",
   // stake verification against the chain
   "onchain_matched", "stake_reported_sol", "stake_onchain_sol",
-  "stake_abs_diff_sol", "stake_max_rel_pct",
+  "stake_abs_diff_sol", "stake_max_rel_pct", "stake_median_rel_pct",
   // BAM's own published headline, and the same quantity derived from chain
   "bam_headline_stake_sol", "bam_headline_share_pct",
   "bam_share_reported_pct", "bam_share_onchain_pct",
@@ -86,6 +88,24 @@ const main = async () => {
   if (!explorer.length) die("BAM explorer returned no validators");
   if (!kobe.length) die("Kobe returned no validators");
   if (!vote?.current?.length) die("RPC returned no vote accounts");
+
+  // Reject a truncated source rather than publishing it as a disagreement.
+  //
+  // Kobe twice served a short list — 232 and 192 validators against its usual
+  // ~666 — and every validator missing from it was recorded as one the two
+  // sources "disagreed" about. That produced spikes of 142 and 181 disputed
+  // validators on the public chart: not a finding about BAM, an outage at Jito
+  // rendered as one.
+  //
+  // The chain is the reference for how many validators exist, which makes this
+  // an independent completeness test rather than a guess about what looks
+  // normal. Kobe lists very nearly the full validator set, so a response holding
+  // less than four-fifths of it is short, and a short list cannot support any
+  // claim about who is missing from it.
+  const chainValidators = vote.current.length;
+  if (kobe.length < chainValidators * 0.8) {
+    die(`Kobe returned ${kobe.length} validators against ${chainValidators} on chain — truncated, refusing to record a disagreement`);
+  }
   // Guarded rather than defaulted. A missing headline written as 0 would publish
   // "BAM claims 0% of stake" as a measurement, which is the same fault as
   // recording an empty API response as an observation.
@@ -115,6 +135,7 @@ const main = async () => {
   const networkStake = vote.current.reduce((a, v) => a + v.activatedStake, 0) / 1e9;
 
   let matched = 0, reported = 0, onchain = 0, maxRel = 0;
+  const rels = [];
   for (const [id, r] of explorerById) {
     const c = chain.get(id);
     if (c === undefined) continue;      // in BAM's list but not an active validator
@@ -122,16 +143,29 @@ const main = async () => {
     const claimed = r.stake ?? 0;
     reported += claimed;
     onchain += c;
-    if (c > 0) maxRel = Math.max(maxRel, (Math.abs(claimed - c) / c) * 100);
+    if (c > 0) {
+      const rel = (Math.abs(claimed - c) / c) * 100;
+      rels.push(rel);
+      maxRel = Math.max(maxRel, rel);
+    }
   }
   if (!matched) die("no BAM validator matched an on-chain vote account");
+
+  // A max over hundreds of validators is decided by whichever one moved stake
+  // between BAM's snapshot and ours — one delegation swing put 27.85% on the
+  // chart while every other validator agreed to four decimal places. The median
+  // describes the reporting; the max is kept because a genuine systematic error
+  // would move both.
+  rels.sort((a, b) => a - b);
+  const medRel = rels.length ? rels[Math.floor(rels.length / 2)] : 0;
 
   const row = [
     new Date().toISOString().replace(/\.\d+Z$/, "Z"),
     explorerById.size, kobeBam.size, inBoth,
     onlyExplorer.length, onlyKobe.length, disputedStake.toFixed(2),
+    kobe.length, chainValidators,
     matched, reported.toFixed(2), onchain.toFixed(2),
-    Math.abs(reported - onchain).toFixed(2), maxRel.toFixed(4),
+    Math.abs(reported - onchain).toFixed(2), maxRel.toFixed(4), medRel.toFixed(4),
     // BAM's published headline, verbatim. Its share uses BAM's own denominator,
     // which is not identical to getVoteAccounts' — that difference is precisely
     // what makes comparing them a real check rather than a restatement.
