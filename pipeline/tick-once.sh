@@ -78,7 +78,12 @@ bash /app/pipeline/rotate.sh
 # Primary only. A witness exists to corroborate the capture, and duplicating this
 # from three vantages would triple the load on other people's APIs to compute the
 # same answer from the same public data.
-VERIFY_MINUTES="${VERIFY_MINUTES:-30}"
+# Aligned with the publish cycle rather than half as often. At 30 minutes a
+# published page could carry a verification reading half an hour older than its
+# headline, and the two panels would disagree on validator counts with nothing
+# on the page explaining why. Matching the publish interval keeps the worst-case
+# gap to roughly one cycle, and the panel states its own read time regardless.
+VERIFY_MINUTES="${VERIFY_MINUTES:-15}"
 if [ "${VANTAGE:-primary}" = "primary" ] && [ -n "${SOLANA_RPC_URL:-}" ]; then
   VER="$DIR/.last_verify"
   if [ ! -f "$VER" ] || find "$VER" -maxdepth 0 -mmin "+$VERIFY_MINUTES" 2>/dev/null | grep -q .; then
