@@ -146,9 +146,16 @@ function writestreak(v) {
   #
   # The raw capture is archived either way. What is withheld here is the
   # interpretation, never the record.
+  #
+  # Without STREAK_FILE there is nowhere to count consecutive withholdings, so
+  # the release above could never fire and a sustained drop would be withheld
+  # for as long as it lasted. The guard therefore does not run at all when no
+  # state file is given — as when the archive is re-flattened by hand. Letting a
+  # partial row through is recoverable; dropping an unbounded run of real ones
+  # during a rebuild is not.
   RATIO = 0.8
   MAX_SKIP = 2
-  if (PREV_NODES + 0 > 0 && PREV_VALS + 0 > 0 &&
+  if (STREAK_FILE != "" && PREV_NODES + 0 > 0 && PREV_VALS + 0 > 0 &&
       (ncount < PREV_NODES * RATIO || vcount < PREV_VALS * RATIO)) {
     streak = readstreak()
     if (streak < MAX_SKIP) {
