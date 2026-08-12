@@ -46,6 +46,33 @@ function writestreak(v) {
   line = $0
   if (line ~ /^[ \t]*$/) next
 
+  # One line, one capture.
+  #
+  # A record written twice with no newline between them is still one line, and
+  # everything below parses by regex rather than by JSON — so the segment
+  # boundaries run straight through both copies and the counts come out summed.
+  # raw/2026/06/29 carries exactly that: 2026-06-29T04:04:58Z appears twice in a
+  # single 120 KB line, and re-flattening it yields a row claiming 771 validators
+  # and 282M SOL, against 380 and 141M either side of it.
+  #
+  # A JSON parser rejects the line outright, which is why this went unseen: every
+  # consumer that reads the archive properly skips it, and only this one, which
+  # reads it by pattern, is fooled. The published series never contained the row
+  # — so the effect was that re-deriving the series from the archive produced one
+  # row the original did not have, in the artifact whose whole claim is that the
+  # two agree.
+  #
+  # gsub returns the match count and, replacing each match with itself, leaves
+  # the line untouched.
+  if (gsub(/"ts":"/, "&", line) > 1) {
+    if (SKIPLOG != "") {
+      printf "%s malformed capture withheld — %d records concatenated into one line\n", \
+        substr(line, 8, 20), gsub(/"ts":"/, "&", line) >> SKIPLOG
+      close(SKIPLOG)
+    }
+    next
+  }
+
   match(line, /"ts":"([^"]+)"/, m);                     ts       = m[1]
   match(line, /"bam_stake":([0-9.eE+-]+)/, m);          bam_stake = m[1]
   match(line, /"bam_stake_percentage":([0-9.eE+-]+)/, m); bam_pct  = m[1]

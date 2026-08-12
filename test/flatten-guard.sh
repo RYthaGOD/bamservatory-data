@@ -93,6 +93,18 @@ check "and every one after it"                  "$(has_ts drop 2026-09-01T00:05:
 check "exactly two captures were withheld"      "$(withheld drop)" "2"
 check "the release is logged, not silent"       "$(grep -c 'persisted past' "$WORK/drop.partial.log" || true)" "1"
 
+# A record written twice with no newline between them is still one line. Nothing
+# below parses JSON, so the segment boundaries run through both copies and the
+# counts come out summed — raw/2026/06/29 holds exactly one such line, and it
+# yielded a row claiming 771 validators against 380 either side.
+echo "── two records on one line are not one capture ──"
+replay "$FIX/doubled-line.jsonl" doubled stateful
+check "the malformed line is not flattened"     "$(rows doubled)" "2"
+check "no row appears for its timestamp"        "$(has_ts doubled 2026-06-29T04:04:58Z)" "no"
+check "the valid captures either side survive"  "$(has_ts doubled 2026-06-29T04:03:58Z)$(has_ts doubled 2026-06-29T04:05:54Z)" "yesyes"
+check "it is logged as malformed, not as partial" \
+  "$(grep -c 'malformed capture withheld' "$WORK/doubled.partial.log" || true)" "1"
+
 # Without somewhere to count withholdings the release can never fire, so the
 # guard must not run at all — otherwise re-flattening the archive by hand would
 # silently drop every record of a real reduction.
