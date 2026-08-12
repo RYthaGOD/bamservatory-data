@@ -25,17 +25,36 @@ set -u
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 target="${1:-}"
 
+# Say plainly which tool is missing.
+#
+# Without this, an absent zstd reports every day as INCONSISTENT with a record
+# count of zero — which reads as "the archive is corrupt" rather than "you do not
+# have zstd installed". The first impression of a verification tool should never
+# be a false accusation against the thing it is verifying.
+for t in sha256sum zstd awk; do
+  command -v "$t" >/dev/null 2>&1 || {
+    echo "verify.sh needs '$t' and it is not on PATH."
+    echo "  Debian/Ubuntu: sudo apt-get install -y coreutils zstd gawk"
+    echo "  macOS:         brew install coreutils zstd gawk"
+    exit 2
+  }
+done
+
 # Root manifest covers the primary; one per witness under vantage/.
-MANIFESTS="$ROOT/MANIFEST.tsv"
+#
+# An array, not a space-separated string. Joined into one string these paths word
+# -split on the first space in the repo's location — a clone under "BAM BAM PM"
+# broke every path, verified nothing, and still exited 0.
+MANIFESTS=("$ROOT/MANIFEST.tsv")
 for m in "$ROOT"/vantage/*/MANIFEST.tsv; do
-  [ -f "$m" ] && MANIFESTS="$MANIFESTS $m"
+  [ -f "$m" ] && MANIFESTS+=("$m")
 done
 
 [ -f "$ROOT/MANIFEST.tsv" ] || { echo "no MANIFEST.tsv — is this the archive repo?"; exit 1; }
 
 total_ok=0; total_bad=0; total_missing=0
 
-for MANIFEST in $MANIFESTS; do
+for MANIFEST in "${MANIFESTS[@]}"; do
   label=$(dirname "${MANIFEST#$ROOT/}")
   [ "$label" = "." ] && label="primary"
 
@@ -137,6 +156,20 @@ done
 echo
 echo "── total ──"
 echo "  verified $total_ok day(s)   mismatched $total_bad   missing $total_missing"
+
+# Verifying nothing is a failure, not a pass.
+#
+# Zero mismatches out of zero days satisfies every check below while
+# establishing nothing at all, and it exits green — which is precisely the
+# outcome this script exists to make impossible. It has already happened: word
+# -split manifest paths produced "verified 0 day(s)  mismatched 0  missing 0"
+# and an exit code of 0.
+if [ "$total_ok" -eq 0 ]; then
+  echo
+  echo "  FAILED: no day was verified. The archive was not checked, so this run"
+  echo "  proves nothing — treat it as a failure, not a pass."
+  exit 1
+fi
 
 [ "$total_bad" -eq 0 ] && [ "$total_missing" -eq 0 ] || exit 1
 exit 0
