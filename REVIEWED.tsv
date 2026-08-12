@@ -1,0 +1,18 @@
+# Cross-vantage divergences that have been investigated and explained.
+#
+# compare.mjs fails on any divergence it finds. That is the right default — but
+# an archive is append-only, so a single bad minute would fail every run from
+# then on, and a check that is permanently red is a check nobody reads. This
+# file is how a divergence stops failing the build without disappearing.
+#
+# It cannot hide anything. Every entry here is still printed by compare.mjs, with
+# this explanation attached, and the run states how many findings it covered. An
+# entry matches one vantage at one minute, so it can never excuse a different
+# divergence, a later one, or the same fault at another vantage. Anything not
+# listed here still turns the badge red.
+#
+# Adding an entry is a claim that someone looked and understood the cause. It is
+# not a way to make a red run green.
+#
+# vantage	minute	reviewed_at	explanation
+ams	2026-08-11T15:21	2026-08-12	Partial API response at the Amsterdam collector: 10 nodes and 77 validators against 373 at the primary, recovering completely on the next capture. The record is internally consistent (its headline stake matches the sum of its own nodes and validators), so it is a coherent but incomplete view served to one vantage, not a divergent one. flatten.awk now withholds responses like this from the series; the raw capture is archived either way.

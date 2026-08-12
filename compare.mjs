@@ -40,6 +40,33 @@ const B_REL = arg("--b", null);
 const STAKE_TOL = Number(arg("--stake-tolerance", "0.5"));   // percent
 const VAL_TOL = Number(arg("--validator-tolerance", "3"));   // absolute count
 
+// ── reviewed divergences ─────────────────────────────────────────────────────
+// Findings that have been investigated, explained, and recorded in REVIEWED.tsv.
+// They are still reported in full; they just stop failing the run.
+//
+// The archive is append-only, so without this one bad minute fails every run
+// forever. A permanently red badge is not a stricter check — it is a check
+// nobody reads any more, and the next real divergence arrives inside a failure
+// that was already there.
+//
+// Keyed to one vantage at one minute, so an entry can never cover a divergence
+// other than the one someone actually looked at. --strict ignores the ledger.
+const REVIEWED = (() => {
+  const p = path.join(ROOT, "REVIEWED.tsv");
+  const m = new Map();
+  if (!fs.existsSync(p)) return m;
+  for (const line of fs.readFileSync(p, "utf8").split(/\r?\n/)) {
+    if (!line.trim() || line.startsWith("#")) continue;
+    const [vantage, minute, reviewedAt, ...rest] = line.split("\t");
+    if (!vantage || !minute) continue;
+    m.set(`${vantage}\t${minute}`, { reviewedAt, why: rest.join(" ").trim() });
+  }
+  return m;
+})();
+const STRICT = has("--strict");
+// "vantage/ams/raw" -> "ams"; the primary is its own name.
+const vantageOf = (rel) => (rel.startsWith("vantage/") ? rel.split("/")[1] : "primary");
+
 // Discover witnesses if none named.
 const vantageDir = path.join(ROOT, "vantage");
 let bList = [];
@@ -214,6 +241,7 @@ const compareDay = (day, aRel, bRel) => {
 console.log(`cross-vantage agreement — A = ${A_REL}`);
 
 let anyDivergence = false;
+let reviewedHits = 0;
 for (const bRel of bList) {
   const days = has("--all")
     ? daysIn(A_REL).filter((d) => daysIn(bRel).includes(d))
@@ -236,6 +264,13 @@ for (const bRel of bList) {
     const pct = r.compared ? ((r.agree / r.compared) * 100).toFixed(1) : "n/a";
     console.log(`  ${day}  ${String(r.compared).padStart(8)}  ${String(r.agree).padStart(6)} (${pct}%)  ${String(r.aOnly).padStart(6)}  ${String(r.bOnly).padStart(6)}`);
     for (const i of r.issues) {
+      const seen = REVIEWED.get(`${vantageOf(bRel)}\t${i.min}`);
+      if (seen && !STRICT) {
+        reviewedHits++;
+        console.log(`      ${i.min}  ${i.problems.join("; ")}`);
+        console.log(`        └ reviewed ${seen.reviewedAt}: ${seen.why}`);
+        continue;
+      }
       anyDivergence = true;
       console.log(`      ${i.min}  ${i.problems.join("; ")}`);
     }
@@ -243,9 +278,17 @@ for (const bRel of bList) {
 }
 
 console.log();
+if (reviewedHits) {
+  console.log(`${reviewedHits} finding(s) matched a reviewed entry in REVIEWED.tsv and are`);
+  console.log(`reported above rather than failing this run. Run with --strict to ignore`);
+  console.log(`that file and treat every finding as a failure.`);
+  console.log();
+}
 console.log(anyDivergence
   ? "Divergence found. Investigate before relying on either vantage."
-  : "No divergence beyond tolerance.");
+  : reviewedHits
+    ? "No divergence beyond tolerance that has not already been reviewed."
+    : "No divergence beyond tolerance.");
 console.log();
 console.log("Agreement means two independent collectors saw the same thing. It does");
 console.log("not mean the API told the truth — both could be shown the same false");
