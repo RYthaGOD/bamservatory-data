@@ -136,6 +136,14 @@ if [ -d "$ARCHIVE/.git" ]; then
     cp "$DIR/verification.csv" "$ARCHIVE/verification.csv"
   fi
 
+  # The attestation probe's own answer, published for the same reason: the
+  # project's largest stated limit should be dated by the last time a machine
+  # looked, not by the last time someone remembered to. Its commit history is
+  # then the record of how long BAM has been asked.
+  if [ "$VANTAGE" = "primary" ] && [ -s "$DIR/attestations.json" ]; then
+    cp "$DIR/attestations.json" "$ARCHIVE/attestations.json"
+  fi
+
   bash /app/pipeline/archive.sh || log "archive: archive.sh reported a failure."
 
   # Each vantage owns its own subtree, so the two collectors never stage the
@@ -153,6 +161,7 @@ if [ -d "$ARCHIVE/.git" ]; then
     # and never actually published — a weekly no-op that looks like it works.
     [ "$VANTAGE" = "primary" ] && [ -d "$ARCHIVE/seed" ] && git -C "$ARCHIVE" add seed
     [ "$VANTAGE" = "primary" ] && [ -f "$ARCHIVE/verification.csv" ] && git -C "$ARCHIVE" add verification.csv
+    [ "$VANTAGE" = "primary" ] && [ -f "$ARCHIVE/attestations.json" ] && git -C "$ARCHIVE" add attestations.json
     # The commit message names the days added, so the archive's own history is
     # readable without decompressing anything.
     added=$(git -C "$ARCHIVE" diff --cached --name-only -- "$RAW_REL" \

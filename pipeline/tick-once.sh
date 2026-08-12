@@ -108,6 +108,24 @@ if [ "${VANTAGE:-primary}" = "primary" ] && [ -n "${SOLANA_RPC_URL:-}" ]; then
   fi
 fi
 
+# Has BAM published attestations yet? Checked daily, primary only.
+#
+# This is the project's largest stated limit, and both READMEs carry it with a
+# hand-written date. A date maintained by memory drifts in the worst direction:
+# it would go on saying no endpoint exists long after one appeared. Daily is
+# frequent enough that the claim on the page is never more than a day old, and
+# rare enough to be eight requests against someone else's API.
+ATTEST_MINUTES="${ATTEST_MINUTES:-1440}"
+if [ "${VANTAGE:-primary}" = "primary" ]; then
+  ATT="$DIR/.last_attest"
+  if [ ! -f "$ATT" ] || find "$ATT" -maxdepth 0 -mmin "+$ATTEST_MINUTES" 2>/dev/null | grep -q .; then
+    touch "$ATT"
+    node /app/pipeline/probe-attestations.mjs --out "$DIR/attestations.json" \
+      >> "$DIR/verify.log" 2>&1 \
+      || echo "$(date -u +%FT%TZ) attestation probe failed (capture unaffected)" >> "$DIR/verify.log"
+  fi
+fi
+
 # Publish on a throttle, detached, so a slow push never delays the next capture.
 # The marker is touched up-front: a failed publish then waits out the window
 # instead of retrying every minute against a service that is already unhappy.

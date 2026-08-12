@@ -65,6 +65,13 @@ this archive and what the network actually executed. When BAM node attestations
 become publicly queryable, that link becomes possible and closing it is the
 single most valuable thing this project could add.
 
+`pipeline/probe-attestations.mjs` asks daily whether that has happened and
+publishes the answer to [`attestations.json`](attestations.json), so the claim
+carries the date a machine last looked rather than the date someone last
+remembered to. It records whether BAM's API was reachable at all, because "we
+looked and there was nothing" and "we could not look" are different results and
+only one of them is evidence.
+
 **That capture was continuous.** Collectors miss windows — restarts, API
 timeouts, deploys. `verify.sh` prints per-day coverage against the expected
 1440 captures/day rather than claiming completeness, and the gaps are visible in
@@ -152,7 +159,9 @@ One long-lived container, one volume, one clock.
 | `pipeline/publish.sh` | Rebuilds the dashboard, pushes site and archive |
 | `pipeline/verify-sources.mjs` | Cross-checks BAM against Solana and Jito's Kobe API → `verification.csv` |
 | `pipeline/verification-schema.mjs` | Every schema `verification.csv` has had, and the migration between them |
+| `pipeline/probe-attestations.mjs` | Daily: has BAM published attestations yet? → `attestations.json` |
 | `verify.sh` | Third-party verification. No credentials required |
+| `test/flatten-guard.sh` | Asserts the partial-response guard in both directions. Runs in CI |
 
 A Railway cron job would spawn a fresh container per run, and a volume admits
 only one active deployment — so capture runs as a service with an internal loop
