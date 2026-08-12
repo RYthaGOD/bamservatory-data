@@ -43,6 +43,25 @@ jobs:
           chmod +x ./verify.sh
           ./verify.sh
 
+  pipeline-guards:
+    name: pipeline guards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # gawk, not the mawk ubuntu ships as `awk`: flatten.awk uses
+      # three-argument match(), which mawk ignores silently.
+      - name: install gawk
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq gawk
+
+      # The guard that decides whether a capture enters the published series.
+      # Wrong in one direction it publishes a network that never existed; wrong
+      # in the other it stops the series tracking BAM. Both directions are
+      # asserted here, against the real captures from the incident that prompted
+      # the guard and against a synthetic drop designed to break it.
+      - name: flatten partial-response guard
+        run: bash ./test/flatten-guard.sh
+
   cross-vantage:
     name: cross-vantage agreement
     runs-on: ubuntu-latest

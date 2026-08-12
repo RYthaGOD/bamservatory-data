@@ -168,8 +168,12 @@ function writestreak(v) {
       next
     }
     # Held for MAX_SKIP captures and still low: treat it as real from here on.
+    #
+    # Deliberately does not repeat the word "withheld" — this line records the
+    # opposite decision, and a log where the two cannot be told apart by a plain
+    # search is a log that will be miscounted by whoever next tries.
     if (SKIPLOG != "") {
-      printf "%s reduced capture persisted past %d withheld captures — recording it as observed (%d nodes, %d validators)\n", \
+      printf "%s reduced capture persisted past %d holds — recording it as observed (%d nodes, %d validators)\n", \
         ts, MAX_SKIP, ncount, vcount >> SKIPLOG
       close(SKIPLOG)
     }
