@@ -144,9 +144,12 @@ if (TS) evidence = evidence.filter((e) => e.ts === TS);
 const published = readPublished();
 
 if (!evidence.length) {
-  console.log("No evidence records found for that selection.");
-  console.log("Evidence is written from the first verification run after this was deployed;");
-  console.log("rows published before then cannot be recomputed, only read.");
+  console.log("No evidence records found for that selection.\n");
+  console.log("Two reasons that is expected rather than wrong:");
+  console.log("  • Today's rows are not archived yet. Evidence is published a whole UTC day");
+  console.log("    at a time, like the raw captures, so the newest checkable day is yesterday.");
+  console.log("  • Rows published before evidence recording was deployed have none, and");
+  console.log("    cannot be recomputed — only read.");
   process.exit(0);
 }
 
