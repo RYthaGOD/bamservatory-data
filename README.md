@@ -43,6 +43,32 @@ inputs. `flatten.awk` turns raw captures into CSVs; `stats.js` in the
 coefficients, HHI, top-N concentration — recompute them all from `raw/` and
 compare.
 
+**The cross-source checks, including their arithmetic.** `verification.csv`
+reports aggregates over three API responses that existed for a moment: a median
+per-validator deviation, a disputed-stake total, BAM's share against the chain.
+Those could be read but not checked — the responses behind them were never
+written down, so the figures had to be taken.
+
+`verification/` now carries the inputs each row was computed from, reduced to
+exactly the fields the row uses, archived and hashed the same way the raw
+captures are. `recompute.mjs` turns them back into rows and diffs them against
+what was published:
+
+```bash
+node recompute.mjs                    # every row that has evidence
+node recompute.mjs --day 2026-08-12   # one archived day
+```
+
+A disagreement prints field by field and exits non-zero. This costs roughly
+250 KB archived per day against the raw capture's 35 KB, which is the price of
+the verification panel being checkable rather than merely legible; set
+`VERIFY_EVIDENCE=` to turn it off, at the cost of rows nobody can re-check.
+
+It proves the transform, not the sources. Evidence gathered by the same process
+it vouches for cannot establish that BAM or Jito reported truthfully — see below
+— but the gap between a published row and the inputs it claims to come from was
+previously unbridgeable, and is now closed.
+
 **That history was not revised.** Each completed UTC day of raw capture is
 compressed to `raw/YYYY/MM/DD.jsonl.zst` and its SHA-256 appended to
 [`MANIFEST.tsv`](MANIFEST.tsv). The manifest is append-only in a public commit
@@ -160,6 +186,8 @@ One long-lived container, one volume, one clock.
 | `pipeline/verify-sources.mjs` | Cross-checks BAM against Solana and Jito's Kobe API → `verification.csv` |
 | `pipeline/verification-schema.mjs` | Every schema `verification.csv` has had, and the migration between them |
 | `pipeline/probe-attestations.mjs` | Daily: has BAM published attestations yet? → `attestations.json` |
+| `pipeline/archive-evidence.sh` | Completed days of verification evidence → `verification/`, hashes → its own manifest |
+| `recompute.mjs` | Rebuilds published verification rows from their evidence and diffs them |
 | `verify.sh` | Third-party verification. No credentials required |
 | `test/flatten-guard.sh` | Asserts the partial-response guard in both directions. Runs in CI |
 

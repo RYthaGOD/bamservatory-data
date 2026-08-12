@@ -33,6 +33,8 @@ import { HEADER, migrate, toLine } from "./verification-schema.mjs";
 const arg = (n, d) => { const i = process.argv.indexOf(n); return i >= 0 ? process.argv[i + 1] : d; };
 
 const OUT = arg("--out", "verification.csv");
+// Where the inputs behind each row are written. See the evidence block below.
+const EVIDENCE = arg("--evidence", process.env.VERIFY_EVIDENCE || "");
 const BAM_API = arg("--bam", process.env.BAM_API_BASE || "https://explorer.bam.dev/api/v1");
 const KOBE = arg("--kobe", process.env.KOBE_API_BASE || "https://kobe.mainnet.jito.network");
 const RPC = arg("--rpc", process.env.SOLANA_RPC_URL || "");
@@ -177,6 +179,50 @@ const main = async () => {
     bam_share_reported_pct: ((reported / networkStake) * 100).toFixed(4),
     bam_share_onchain_pct: ((onchain / networkStake) * 100).toFixed(4),
   }, { strict: true });
+
+  // ── evidence ──────────────────────────────────────────────────────────────
+  // The inputs this row was computed from, so the arithmetic can be checked by
+  // someone who does not trust it.
+  //
+  // Everything else this project publishes is a pure function of published
+  // inputs: the captures are archived, so any figure on the dashboard can be
+  // recomputed from them. The verification row was the exception. It reports
+  // aggregates — a median deviation, a disputed-stake total — over three
+  // responses that existed for one moment and were never written down. Nobody
+  // could check whether 0.0000% was the right median, only take it.
+  //
+  // So the responses are reduced to exactly the fields the row is derived from
+  // and archived alongside it. recompute.mjs turns one of these back into a row
+  // and diffs it against what was published, which is the check this record
+  // exists to make possible.
+  //
+  // What it still does not establish: that the sources told the truth, or that
+  // these were faithfully recorded. Evidence produced by the same process it
+  // vouches for cannot settle that, and nothing short of attestations will. It
+  // closes the gap between the published row and the inputs it claims to come
+  // from — which was, until now, unbridgeable rather than merely narrow.
+  if (EVIDENCE) {
+    const record = {
+      ts: row.split(",")[0],
+      sources: {
+        // Verbatim, both fields, as BAM states them.
+        bam_headline: { bam_stake: headStake, bam_stake_percentage: headShare },
+        // Only the two fields the row uses. The full response carries display
+        // metadata that would triple the size and prove nothing further.
+        bam_validators: explorer.map((r) => [r.validator_pubkey, r.stake ?? 0]),
+        // Lamports, as Kobe returns them, so the conversion is auditable too.
+        kobe_running_bam: kobe.filter((r) => r.running_bam === true)
+          .map((r) => [r.identity_account, r.active_stake ?? 0]),
+        // The denominator of the truncation guard, and the guard's whole point.
+        kobe_total: kobe.length,
+        // Every current vote account, not only BAM's. The network total is the
+        // denominator of the share figures, so recording only BAM's validators
+        // would leave the most contested number on the panel unrecomputable.
+        chain_vote_accounts: vote.current.map((v) => [v.nodePubkey, v.activatedStake]),
+      },
+    };
+    fs.appendFileSync(EVIDENCE, JSON.stringify(record) + "\n");
+  }
 
   // Bring the file up to the current schema before appending to it.
   //

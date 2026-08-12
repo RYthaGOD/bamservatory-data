@@ -102,7 +102,13 @@ if [ "${VANTAGE:-primary}" = "primary" ] && [ -n "${SOLANA_RPC_URL:-}" ]; then
   VER="$DIR/.last_verify"
   if [ ! -f "$VER" ] || find "$VER" -maxdepth 0 -mmin "+$VERIFY_MINUTES" 2>/dev/null | grep -q .; then
     touch "$VER"
+    # --evidence records the inputs each row was computed from, so the row can be
+    # recomputed by someone who does not trust it (see recompute.mjs). It is the
+    # bulk of what this pipeline publishes: roughly 250 KB archived per day
+    # against the raw capture's 35 KB. Set VERIFY_EVIDENCE= to disable, or raise
+    # VERIFY_MINUTES to record fewer, at the cost of rows nobody can re-check.
     node /app/pipeline/verify-sources.mjs --out "$DIR/verification.csv" \
+      --evidence "${VERIFY_EVIDENCE-$DIR/verification-evidence.jsonl}" \
       >> "$DIR/verify.log" 2>&1 \
       || echo "$(date -u +%FT%TZ) verification run failed (capture unaffected)" >> "$DIR/verify.log"
   fi

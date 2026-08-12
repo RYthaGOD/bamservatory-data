@@ -49,6 +49,11 @@ MANIFESTS=("$ROOT/MANIFEST.tsv")
 for m in "$ROOT"/vantage/*/MANIFEST.tsv; do
   [ -f "$m" ] && MANIFESTS+=("$m")
 done
+# The verification evidence is archived the same way and gets the same integrity
+# check. Its cadence is different — one record per verification run, not one per
+# minute — so the capture-coverage sections below skip it rather than measure it
+# against a rate it was never meant to hit.
+[ -f "$ROOT/verification/MANIFEST.tsv" ] && MANIFESTS+=("$ROOT/verification/MANIFEST.tsv")
 
 [ -f "$ROOT/MANIFEST.tsv" ] || { echo "no MANIFEST.tsv — is this the archive repo?"; exit 1; }
 
@@ -106,7 +111,7 @@ for MANIFEST in "${MANIFESTS[@]}"; do
   # ── 2. Coverage ───────────────────────────────────────────────────────────
   # Capture gaps are a fact of running a collector, and hiding them would be its
   # own kind of dishonesty. Report expected-vs-actual rather than asserting 100%.
-  if [ "$ok" -gt 0 ]; then
+  if [ "$ok" -gt 0 ] && [ "$label" != "verification" ]; then
     echo "  coverage (expected 1440 captures/day at 60s):"
     while IFS=$'\t' read -r sha rel records first_ts last_ts archived_at collector; do
       [ "$sha" = "sha256" ] && continue
@@ -131,7 +136,7 @@ for MANIFEST in "${MANIFESTS[@]}"; do
   # A gap is not automatically a fault: a collector that was genuinely down for a
   # day should show one. It is reported so a reader can tell the difference,
   # rather than assumed either way.
-  if [ -z "$target" ] && [ "$ok" -gt 0 ]; then
+  if [ -z "$target" ] && [ "$ok" -gt 0 ] && [ "$label" != "verification" ]; then
     days=$(awk -F'\t' 'NR>1 && $2!="" {
       n=split($2, p, "/"); if (n<4) next
       print p[n-2]"-"p[n-1]"-"substr(p[n],1,2)

@@ -145,6 +145,7 @@ if [ -d "$ARCHIVE/.git" ]; then
   fi
 
   bash /app/pipeline/archive.sh || log "archive: archive.sh reported a failure."
+  bash /app/pipeline/archive-evidence.sh || log "archive: archive-evidence.sh reported a failure."
 
   # Each vantage owns its own subtree, so the two collectors never stage the
   # same paths and a push race costs a retry rather than someone's data.
@@ -162,6 +163,7 @@ if [ -d "$ARCHIVE/.git" ]; then
     [ "$VANTAGE" = "primary" ] && [ -d "$ARCHIVE/seed" ] && git -C "$ARCHIVE" add seed
     [ "$VANTAGE" = "primary" ] && [ -f "$ARCHIVE/verification.csv" ] && git -C "$ARCHIVE" add verification.csv
     [ "$VANTAGE" = "primary" ] && [ -f "$ARCHIVE/attestations.json" ] && git -C "$ARCHIVE" add attestations.json
+    [ "$VANTAGE" = "primary" ] && [ -d "$ARCHIVE/verification" ] && git -C "$ARCHIVE" add verification
     # The commit message names the days added, so the archive's own history is
     # readable without decompressing anything.
     added=$(git -C "$ARCHIVE" diff --cached --name-only -- "$RAW_REL" \

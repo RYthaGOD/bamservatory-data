@@ -22,6 +22,7 @@ set -u
 DIR="${CAPTURE_DIR:-/data/capture}"
 LOG="$DIR/ticks.jsonl"
 VALS="$DIR/validators.csv"
+EVIDENCE="$DIR/verification-evidence.jsonl"
 WATERMARK="$DIR/.archived_through"
 
 # Rewriting a multi-hundred-MB file is expensive, so only do it when there is
@@ -72,6 +73,45 @@ if [ "$(size_mb "$LOG")" -gt "$TICKS_TRIM_ABOVE_MB" ] && [ -n "$watermark" ]; th
   else
     rm -f "$keep"
     echo "$(date -u +%FT%TZ) ticks.jsonl rotation SKIPPED — refusing to leave fewer than 2 records" >> "$DIR/ticks.log"
+  fi
+fi
+
+# ── verification-evidence.jsonl ──────────────────────────────────────────────
+# Around 8 MB a day of inputs behind the verification rows, so it needs bounding
+# like the others — but it is not derived from anything, so a record trimmed
+# before it is archived is gone and the row it explains becomes uncheckable
+# forever.
+#
+# Hence the same rule ticks.jsonl gets: keep whole days strictly after the last
+# day confirmed published, and never trim on a bare retention count.
+#
+# But not the same watermark. .archived_through says raw capture is published
+# through that day, and evidence is archived by a different script in the same
+# cycle — so a run where archive.sh succeeded and archive-evidence.sh did not
+# would advance it and rotation would then delete evidence that was never
+# published. That is precisely the fault the two markers on this volume already
+# exist to prevent, arriving by a third route.
+#
+# So the watermark comes from the evidence manifest itself: the newest day
+# actually recorded there. No manifest, no trimming.
+EV_MANIFEST="${REPO_DIR:-/data/repos}/archive/verification/MANIFEST.tsv"
+if [ -s "$EVIDENCE" ] && [ -f "$EV_MANIFEST" ]; then
+  ev_through=$(awk -F'\t' 'NR>1 && $2!="" {
+    n = split($2, p, "/"); if (n < 4) next
+    print p[n-2]"-"p[n-1]"-"substr(p[n],1,2)
+  }' "$EV_MANIFEST" | sort | tail -n1)
+
+  if [ -n "$ev_through" ]; then
+    ev_keep="$EVIDENCE.keep.$$"
+    awk -v w="$ev_through" 'substr($0,8,10) > w' "$EVIDENCE" > "$ev_keep" 2>/dev/null
+    ev_kept=$(wc -l < "$ev_keep" 2>/dev/null || echo 0)
+    ev_have=$(wc -l < "$EVIDENCE" 2>/dev/null || echo 0)
+    if [ "$ev_kept" -lt "$ev_have" ]; then
+      mv "$ev_keep" "$EVIDENCE"
+      echo "$(date -u +%FT%TZ) rotated verification-evidence.jsonl → $ev_kept records after $ev_through" >> "$DIR/ticks.log"
+    else
+      rm -f "$ev_keep"
+    fi
   fi
 fi
 
