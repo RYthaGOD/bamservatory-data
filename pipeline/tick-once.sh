@@ -36,7 +36,21 @@ if ! "$BIN" snapshot --cache "$LOG" --no-color >/dev/null 2>&1; then
 fi
 
 # Flatten just the new record into the live datasets.
-tail -n1 "$LOG" | awk -f "$FLATTEN" -v SUMMARY="$SUMMARY" -v NODES="$NODES" -v VALS="$VALS"
+#
+# The previous capture's counts go in so flatten.awk can recognise a partial API
+# response — a coherent but incomplete view — and withhold it from the series
+# rather than record it as a smaller network. Read before flattening, since the
+# new row is about to become the last line.
+prev_row=$(tail -n1 "$SUMMARY")
+prev_nodes=$(printf '%s' "$prev_row" | cut -d, -f4)
+prev_vals=$(printf '%s' "$prev_row" | cut -d, -f5)
+[[ "$prev_nodes" =~ ^[0-9]+$ ]] || prev_nodes=0     # header row, or first capture
+[[ "$prev_vals"  =~ ^[0-9]+$ ]] || prev_vals=0
+
+tail -n1 "$LOG" | awk -f "$FLATTEN" \
+  -v SUMMARY="$SUMMARY" -v NODES="$NODES" -v VALS="$VALS" \
+  -v PREV_NODES="$prev_nodes" -v PREV_VALS="$prev_vals" \
+  -v STREAK_FILE="$DIR/.partial_streak" -v SKIPLOG="$DIR/partial.log"
 
 # Structural-tick check, derived from files (no persistent state).
 ts=$(tail -n1 "$SUMMARY" | cut -d, -f1)
