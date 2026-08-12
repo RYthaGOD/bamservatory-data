@@ -1,0 +1,41 @@
+{
+  "checkedAt": "2026-08-12T03:24:25Z",
+  "base": "https://explorer.bam.dev/api/v1",
+  "reachable": true,
+  "attestationsAvailable": false,
+  "endpointsFound": [],
+  "probed": [
+    {
+      "path": "/attestations",
+      "status": 404
+    },
+    {
+      "path": "/attestation",
+      "status": 404
+    },
+    {
+      "path": "/proofs",
+      "status": 404
+    },
+    {
+      "path": "/ordering_attestations",
+      "status": 404
+    },
+    {
+      "path": "/schedules",
+      "status": 404
+    },
+    {
+      "path": "/plugins",
+      "status": 404
+    },
+    {
+      "path": "/tee",
+      "status": 404
+    },
+    {
+      "path": "/enclave",
+      "status": 404
+    }
+  ]
+}
