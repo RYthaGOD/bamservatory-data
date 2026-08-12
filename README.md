@@ -7,8 +7,8 @@ The capture node and public raw archive behind [BAMservatory](https://rythagod.g
 That badge is the point of this repo in one line. It runs on GitHub's
 infrastructure, on a schedule, and checks three things the operator cannot
 quietly influence: every archived day still hashes to what the manifest
-recorded, the two vantages still agree, and the published dashboard has not gone
-stale. A red run is visible to anyone.
+recorded, the three vantages still agree, and the published dashboard has not
+gone stale. A red run is visible to anyone.
 
 This repo exists so that nothing on the dashboard has to be taken on trust. It
 holds the primary record — what the public BAM API returned, as captured — plus
@@ -70,6 +70,24 @@ timeouts, deploys. `verify.sh` prints per-day coverage against the expected
 1440 captures/day rather than claiming completeness, and the gaps are visible in
 the archive itself.
 
+1440 is the nominal rate, not a ceiling: the tick loop corrects for drift rather
+than sleeping a flat 60 seconds, so a day lands within a handful either side and
+recent days record 1445–1468. Coverage above 100% means a few minutes were
+sampled twice, not that time was invented. Every record carries its own
+timestamp, and consumers of the series de-duplicate on it.
+
+**That every capture is complete.** The API has returned coherent but incomplete
+views — valid JSON, self-consistent totals, a fraction of the network. Recording
+one as an observation is how a published minimum came to be 10 nodes and 190
+validators, neither of which was ever true of BAM.
+
+`flatten.awk` now withholds a capture that collapses against the previous one,
+and releases it if the smaller network is still there two captures later, so a
+genuine change costs a couple of minutes of delay rather than being suppressed.
+Withheld captures are listed in `partial.log` on the volume, and the raw record
+is archived either way — what is withheld is the interpretation, never the
+record.
+
 **History, by re-derivation.** Nobody else holds 2026-06-20. The archive's value
 is that it exists at all, and that dependency is honest to name: for the past you
 are trusting an append-only record, not re-deriving from source.
@@ -103,6 +121,22 @@ Agreement across vantages is corroboration, not proof. Both collectors could be
 shown the same false view, and no number of vantages fixes that — only
 attestations do.
 
+#### When a divergence has been explained
+
+`compare.mjs` fails on any divergence, which is the right default and a bad
+permanent state. The archive is append-only, so one bad minute would fail every
+run from then on, and a badge that is always red is a badge nobody reads — the
+next real divergence would arrive inside a failure that was already there.
+
+[`REVIEWED.tsv`](REVIEWED.tsv) is how a divergence stops failing the build
+without disappearing. Each entry names one vantage at one minute and explains
+the cause. Entries are still printed in full on every run, with the explanation
+attached and a count of how many findings they covered, and they cannot cover a
+divergence at any other minute or vantage. `node compare.mjs --all --strict`
+ignores the file entirely.
+
+It records that someone looked. It is not a way to make a red run green.
+
 ## Architecture
 
 One long-lived container, one volume, one clock.
@@ -116,6 +150,8 @@ One long-lived container, one volume, one clock.
 | `pipeline/rotate.sh` | Bounds the two tail-read files; never trims past the archive watermark |
 | `pipeline/archive.sh` | Completed days → `raw/`, hashes → `MANIFEST.tsv` |
 | `pipeline/publish.sh` | Rebuilds the dashboard, pushes site and archive |
+| `pipeline/verify-sources.mjs` | Cross-checks BAM against Solana and Jito's Kobe API → `verification.csv` |
+| `pipeline/verification-schema.mjs` | Every schema `verification.csv` has had, and the migration between them |
 | `verify.sh` | Third-party verification. No credentials required |
 
 A Railway cron job would spawn a fresh container per run, and a volume admits
@@ -169,6 +205,8 @@ Railway service, Dockerfile build, volume mounted at `/data`.
 | `CAPTURE_DIR` | Default `/data/capture` |
 | `TICK_SECONDS` | Default `60` |
 | `PUBLISH_MINUTES` | Default `15` |
+| `VERIFY_MINUTES` | Default `15`. Cross-source verification interval; primary only, and skipped entirely without `SOLANA_RPC_URL` |
+| `SOLANA_RPC_URL` | Optional. Enables the cross-source verification run; without it the panel is simply absent |
 | `ARCHIVE_URL` | Stamped into `metrics.json` provenance. Unset publishes `null` |
 | `BAM_NET_REF` | Set from the Dockerfile build arg; names the collector build in provenance |
 

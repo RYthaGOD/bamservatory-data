@@ -1,6 +1,6 @@
 # Continuous proof, run by GitHub rather than by the operator.
 #
-# Everything this repo claims — that the archive is intact, that the two
+# Everything this repo claims — that the archive is intact, that the three
 # vantages agree, that the published dashboard is actually fresh — has so far
 # been checkable only by someone who chose to clone the repo and run a script.
 # That is a weaker claim than it looks: the checks live on the same machines as

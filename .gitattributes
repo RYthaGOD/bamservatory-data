@@ -17,3 +17,12 @@ SHA256SUMS text eol=lf
 # The archive is the primary record. Never let git touch its bytes.
 raw/**    binary
 MANIFEST.tsv text eol=lf
+
+# Same reasoning as the scripts, for a different failure. These are appended to
+# by a Linux container and would be checked out with CRLF on a Windows clone; a
+# commit from there flips every line ending in the blob, and the collector then
+# rewrites the whole file on its next run. The diff would be the entire
+# verification series, in the one artifact whose value is that it is trivially
+# diffable.
+*.csv     text eol=lf
+*.tsv     text eol=lf
