@@ -94,9 +94,27 @@ for MANIFEST in "${MANIFESTS[@]}"; do
     # The hash proves the file is unchanged; it does not prove the file contains
     # what the manifest claims. Check the record count and the boundary
     # timestamps too, so a day cannot be silently swapped for a different one.
-    n=$(zstd -dc "$ROOT/$rel" | wc -l)
-    f=$(zstd -dc "$ROOT/$rel" | head -n1 | cut -c8-27)
-    l=$(zstd -dc "$ROOT/$rel" | tail -n1 | cut -c8-27)
+    # One decompression, not three, and no `head` on the stream.
+    #
+    # This read the file three times and piped one of them into `head -n1`, which
+    # closes the pipe after the first line. zstd then dies on SIGPIPE and prints
+    # "error 70 : Write error : cannot write block : Broken pipe" to stderr —
+    # once per archived day, so a clean run of the verification tool ended with
+    # sixty-odd errors in it and a summary saying everything was fine.
+    #
+    # The values were never wrong, which is what made it worth fixing rather than
+    # leaving: a reader cannot tell a harmless SIGPIPE from a real decompression
+    # failure, and this script exists to be run by people with no reason to trust
+    # it yet. It says so itself thirty lines up.
+    #
+    # Tracking the last line explicitly rather than reading $0 in END, because
+    # that is only defined behaviour in some awks and this runs under whichever
+    # one the checker happens to have.
+    counts=$(zstd -dc "$ROOT/$rel" \
+      | awk 'NR==1 { f = substr($0,8,20) } { l = substr($0,8,20) } END { print NR, f, l }')
+    n=${counts%% *}
+    l=${counts##* }
+    f=${counts#* }; f=${f%% *}
     if [ "$n" != "$records" ] || [ "$f" != "$first_ts" ] || [ "$l" != "$last_ts" ]; then
       echo "  INCONSISTENT $day  manifest($records, $first_ts→$last_ts)  actual($n, $f→$l)"
       bad=$((bad + 1))
