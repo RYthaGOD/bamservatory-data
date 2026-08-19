@@ -51,7 +51,22 @@ jobs:
       # verify.sh needs the real zstd binary, not Node's implementation, so that
       # the check does not depend on the same runtime that wrote the files.
       - name: install zstd
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq zstd
+        # Only reach for apt if the runner does not already have it. The hosted
+        # image has shipped both for years, so this is normally a no-op — and on
+        # 2026-08-18 the apt path hung for three hours and twenty-three minutes
+        # against an unreachable mirror, taking the job with it. Skipping the
+        # network entirely when nothing is needed removes the failure rather than
+        # bounding it. The retry is for the case where something genuinely is.
+        run: |
+          if command -v zstd >/dev/null 2>&1; then
+            echo "zstd already present: $(zstd --version | head -n1)"
+            exit 0
+          fi
+          for i in 1 2 3; do
+            sudo apt-get update -qq && sudo apt-get install -y -qq zstd && exit 0
+            echo "attempt $i failed; retrying"; sleep 5
+          done
+          echo "could not install zstd" >&2; exit 1
 
       - name: verify every archived day
         run: |
@@ -68,7 +83,22 @@ jobs:
       # gawk, not the mawk ubuntu ships as `awk`: flatten.awk uses
       # three-argument match(), which mawk ignores silently.
       - name: install gawk
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq gawk
+        # Only reach for apt if the runner does not already have it. The hosted
+        # image has shipped both for years, so this is normally a no-op — and on
+        # 2026-08-18 the apt path hung for three hours and twenty-three minutes
+        # against an unreachable mirror, taking the job with it. Skipping the
+        # network entirely when nothing is needed removes the failure rather than
+        # bounding it. The retry is for the case where something genuinely is.
+        run: |
+          if command -v gawk >/dev/null 2>&1; then
+            echo "gawk already present: $(gawk --version | head -n1)"
+            exit 0
+          fi
+          for i in 1 2 3; do
+            sudo apt-get update -qq && sudo apt-get install -y -qq gawk && exit 0
+            echo "attempt $i failed; retrying"; sleep 5
+          done
+          echo "could not install gawk" >&2; exit 1
 
       # The guard that decides whether a capture enters the published series.
       # Wrong in one direction it publishes a network that never existed; wrong
