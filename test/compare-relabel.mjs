@@ -20,6 +20,10 @@
 // one had sin, the other tyo — which is not a rename however much it resembles
 // one at a glance.
 //
+// And --strict must still show the forgiven minutes. A rule that decided
+// something was not a finding at all would otherwise place itself beyond the one
+// escape hatch a sceptical reader has.
+//
 //   node test/compare-relabel.mjs
 
 import { execFileSync } from "node:child_process";
@@ -34,29 +38,40 @@ const check = (label, ok, detail = "") => {
   else { console.log(`  FAIL  ${label}${detail ? `\n          ${detail}` : ""}`); fails++; }
 };
 
-// --strict so REVIEWED.tsv cannot mask the answer. The question here is what the
-// rule itself does, not what has been signed off afterwards.
-const run = (day, b) => {
+// `strict` defaults on for the cases that must fail, so REVIEWED.tsv cannot mask
+// the answer: the question is what the rule does, not what was signed off after.
+const run = (day, b, strict = true) => {
+  const args = [path.join(ROOT, "compare.mjs"), "--day", day, "--b", b];
+  if (strict) args.push("--strict");
   try {
-    return execFileSync(process.execPath,
-      [path.join(ROOT, "compare.mjs"), "--day", day, "--b", b, "--strict"],
+    return execFileSync(process.execPath, args,
       { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   } catch (e) {
     return String(e.stdout ?? "") + String(e.stderr ?? "");
   }
 };
 
+const tail = (out) => out.trim().split("\n").slice(-8).join(" | ");
+
 console.log("── a relabelling in flight is forgiven ──");
 {
-  const out = run("2026-08-18", "vantage/ams/raw");
+  const out = run("2026-08-18", "vantage/ams/raw", false);
   check("the two transition minutes are counted as relabelling",
-    /2 relabelling minute\(s\)/.test(out), out.split("\n").filter((l) => l.includes("2026-08-18")).join(" | "));
+    /2 relabelling minute\(s\)/.test(out), tail(out));
   check("neither is reported as a node-set difference",
     !/2026-08-18T21:5[23]\s+node set differs/.test(out));
   check("the day reads as full agreement", /2026-08-18\s+\d+\s+\d+ \(100\.0%\)/.test(out));
 }
 
-console.log("── a torn read is NOT forgiven, even under --strict ──");
+console.log("── but --strict still shows them ──");
+{
+  const out = run("2026-08-18", "vantage/ams/raw", true);
+  check("--strict reports the relabelling rather than forgiving it",
+    /2026-08-18T21:5[23]\s+node set differs/.test(out), tail(out));
+  check("--strict fails the run", /Divergence found/.test(out));
+}
+
+console.log("── a torn read is NOT forgiven ──");
 {
   const out = run("2026-08-12", "vantage/sin/raw");
   check("04:18 still reported", /2026-08-12T04:18\s+node set differs/.test(out));
@@ -70,6 +85,16 @@ console.log("── an outage recovery is NOT forgiven ──");
   check("20:56 — a node absent at one vantage — still reported",
     /2026-08-12T20:56\s+node set differs/.test(out));
   check("and the run still fails", /Divergence found/.test(out));
+}
+
+// The default path must not fail on either 08-12 day either — those minutes are
+// covered by REVIEWED.tsv, and if that stopped being true this suite should not
+// be the thing that hides it.
+console.log("── and without --strict, the reviewed minutes are explained, not hidden ──");
+{
+  const out = run("2026-08-12", "vantage/sin/raw", false);
+  check("the finding is still printed", /2026-08-12T04:18\s+node set differs/.test(out));
+  check("with its review attached", /└ reviewed 2026-08-13/.test(out));
 }
 
 console.log(fails ? `\ncompare relabel: ${fails} check(s) FAILED` : "\ncompare relabel: all checks passed");

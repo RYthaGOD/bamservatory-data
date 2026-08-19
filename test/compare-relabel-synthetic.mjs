@@ -56,7 +56,7 @@ const NEW = ["ams-mainnet-bam-2-tee", "fra-mainnet-bam-1-tee"];
 
 // `b` is the case under test at 12:01; the minutes either side are identical at
 // both vantages so only the middle one can produce a finding.
-const scenario = (name, bNodes, bStake, bVals) => {
+const scenario = (name, bNodes, bStake, bVals, strict = false) => {
   const dir = fs.mkdtempSync(path.join(WORK, "s-"));
   writeVantage(dir, "raw", [
     [`${DAY}T12:00:30Z`, OLD, 1000, 4],
@@ -71,7 +71,7 @@ const scenario = (name, bNodes, bStake, bVals) => {
   let out;
   try {
     out = execFileSync(process.execPath,
-      [path.join(ROOT, "compare.mjs"), "--root", dir, "--b", "vantage/w/raw", "--day", DAY, "--strict"],
+      [path.join(ROOT, "compare.mjs"), "--root", dir, "--b", "vantage/w/raw", "--day", DAY, ...(strict ? ["--strict"] : [])],
       { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   } catch (e) { out = String(e.stdout ?? "") + String(e.stderr ?? ""); }
   return { name, out, forgiven: /relabelling minute\(s\)/.test(out), reported: /node set differs/.test(out) };
@@ -82,6 +82,10 @@ console.log("── a clean suffix flip is forgiven ──");
   const r = scenario("flip", NEW, 1000, 4);
   check("counted as a relabelling", r.forgiven, r.out.trim().split("\n").slice(-6).join(" | "));
   check("not reported as a node-set difference", !r.reported);
+
+  // The escape hatch must reach the rule.
+  const st = scenario("flip under strict", NEW, 1000, 4, true);
+  check("--strict reports it instead", st.reported && !st.forgiven);
 }
 
 console.log("── remove one reason to forgive, and it is reported again ──");

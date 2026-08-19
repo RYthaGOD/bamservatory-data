@@ -132,6 +132,18 @@ const daysIn = (rel) => {
 //
 // A relabelling whose stake moved between the two samples is still reported.
 // That is the safe direction: it costs a review entry, not a missed divergence.
+//
+// Per-node stake is not compared here, and never has been — loadDay keeps node
+// names, a total, and a validator count, so a vantage misreporting how stake is
+// split between nodes while keeping the total was already invisible. This rule
+// widens that slightly, since a suffix flip is no longer flagged and would have
+// caught such a thing by accident. Worth stating rather than leaving implicit.
+// In all eight relabellings on record the flipped pairs carry identical per-node
+// stake to the cent — fra-1 and fra-2 both held 26137171.91 through the
+// 2026-08-18 transition — so a tighter test is possible; it is not built because
+// the transitional captures also contain unpaired duplicates that a naive
+// multiset comparison would reject, and a rule that breaks on the real case is
+// worse than one honest about its edge.
 const RELABEL_NAME = /^[a-z]{3}-mainnet-bam-\d+-tee$/;
 const regionsOf = (names) => [...new Set(names.map((n) => n.split("-")[0]))].sort().join(",");
 const relabelInFlight = (a, b, extraInB, extraInA) =>
@@ -254,7 +266,11 @@ const compareDay = (day, aRel, bRel) => {
     if (!nearA.some((x) => x.nodes.join(",") === bKey)) {
       const missA = b.nodes.filter((n) => !a.nodes.includes(n));
       const missB = a.nodes.filter((n) => !b.nodes.includes(n));
-      if (relabelInFlight(a, b, missA, missB)) res.relabels++;
+      // --strict reaches this too. The flag is documented as treating every
+      // finding as a failure, and a rule that decides something is not a finding
+      // at all would quietly put itself beyond the one escape hatch a sceptical
+      // reader has. Under --strict the relabelling is reported like anything else.
+      if (!STRICT && relabelInFlight(a, b, missA, missB)) res.relabels++;
       else
         problems.push(`node set differs${missA.length ? ` (+${missA.join("|")} in B)` : ""}${missB.length ? ` (+${missB.join("|")} in A)` : ""}`);
     }
