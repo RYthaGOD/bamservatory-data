@@ -14,6 +14,12 @@
 # Adding an entry is a claim that someone looked and understood the cause. It is
 # not a way to make a red run green.
 #
+# Two of the entries below are now redundant, and are kept deliberately. Since
+# 2026-08-19 compare.mjs recognises a fleet relabelling caught mid-transition and
+# counts it instead of failing, so the 2026-08-18 minutes would no longer be
+# reported at all. They stay because they are the evidence that prompted the
+# rule, and because a rule is easier to trust beside the incident it came from.
+#
 # vantage	minute	reviewed_at	explanation
 ams	2026-08-11T15:21	2026-08-12	Partial API response at the Amsterdam collector: 10 nodes and 77 validators against 373 at the primary, recovering completely on the next capture. The record is internally consistent (its headline stake matches the sum of its own nodes and validators), so it is a coherent but incomplete view served to one vantage, not a divergent one. flatten.awk now withholds responses like this from the series; the raw capture is archived either way.
 sin	2026-08-12T04:18	2026-08-13	The BAM API degraded for all three vantages from about 04:16 to 04:23 and recovered in steps. At this minute every vantage held a torn read — the primary's own header stake (50250585.36) disagreed with the sum of its nodes (65421908.80), and Singapore's disagreed with its own too — so the node sets differ because each collector caught a different instant of the same broken response, not because they were served different views. All three captures are archived; none of them enter the series.

@@ -102,6 +102,44 @@ const daysIn = (rel) => {
 
 // Reduce a day's raw records to one comparable fact per minute. Where a vantage
 // captured twice in a minute the first is kept, so both sides use the same rule.
+// A relabelling in flight is not a disagreement.
+//
+// BAM periodically renames its whole fleet, swapping every node's -1/-2 suffix.
+// Eight of these are on record between 2026-07-08 and 2026-08-18, and they are
+// getting more frequent. When one completes inside a single capture nothing here
+// notices. When it takes longer — the 2026-08-18 one took about three minutes,
+// passing through a state where both names were live at once — the vantages
+// sample different instants of the transition and report different node sets.
+//
+// That is a difference in when each collector looked, not in what it was shown,
+// and failing on it has a cost beyond the noise: this check going red every few
+// days is how a real divergence gets waved through as 'probably another rename'.
+// The file that records reviewed divergences says the same thing about itself.
+//
+// So a node-set difference is excused only when all of this holds:
+//
+//   * both vantages report the identical stake figure — the API's own number,
+//     compared exactly, not within a tolerance
+//   * both report the identical validator count
+//   * both see the identical set of regions
+//   * every differing name is a conventional {city}-mainnet-bam-{n}-tee node
+//
+// The region test is what makes this narrow. A node genuinely present at one
+// vantage and absent at the other changes the region set and still fails, which
+// is what happened on 2026-08-12T04:18 when one collector held sin and another
+// held tyo during a torn read. Only a suffix flip inside regions both vantages
+// already agree on is forgiven.
+//
+// A relabelling whose stake moved between the two samples is still reported.
+// That is the safe direction: it costs a review entry, not a missed divergence.
+const RELABEL_NAME = /^[a-z]{3}-mainnet-bam-\d+-tee$/;
+const regionsOf = (names) => [...new Set(names.map((n) => n.split("-")[0]))].sort().join(",");
+const relabelInFlight = (a, b, extraInB, extraInA) =>
+  a.validators === b.validators &&
+  a.stake === b.stake &&
+  regionsOf(a.nodes) === regionsOf(b.nodes) &&
+  [...extraInB, ...extraInA].every((n) => RELABEL_NAME.test(n));
+
 const loadDay = (rel, day) => {
   const p = dayPath(rel, day);
   if (!fs.existsSync(p)) return null;
@@ -196,7 +234,7 @@ const compareDay = (day, aRel, bRel) => {
   // would double-count them against the neighbouring day's own run.
   const shared = [...Aday.keys()].filter((k) => Bday.has(k)).sort();
   const res = { day, aOnly: Aday.size - shared.length, bOnly: Bday.size - shared.length,
-                compared: shared.length, agree: 0, issues: [] };
+                compared: shared.length, agree: 0, relabels: 0, issues: [] };
 
   for (const min of shared) {
     const a = A.get(min), b = B.get(min);
@@ -216,7 +254,9 @@ const compareDay = (day, aRel, bRel) => {
     if (!nearA.some((x) => x.nodes.join(",") === bKey)) {
       const missA = b.nodes.filter((n) => !a.nodes.includes(n));
       const missB = a.nodes.filter((n) => !b.nodes.includes(n));
-      problems.push(`node set differs${missA.length ? ` (+${missA.join("|")} in B)` : ""}${missB.length ? ` (+${missB.join("|")} in A)` : ""}`);
+      if (relabelInFlight(a, b, missA, missB)) res.relabels++;
+      else
+        problems.push(`node set differs${missA.length ? ` (+${missA.join("|")} in B)` : ""}${missB.length ? ` (+${missB.join("|")} in A)` : ""}`);
     }
 
     const vLo = Math.min(...nearA.map((x) => x.validators));
@@ -242,6 +282,7 @@ console.log(`cross-vantage agreement — A = ${A_REL}`);
 
 let anyDivergence = false;
 let reviewedHits = 0;
+let relabelTotal = 0;
 for (const bRel of bList) {
   const days = has("--all")
     ? daysIn(A_REL).filter((d) => daysIn(bRel).includes(d))
@@ -262,7 +303,9 @@ for (const bRel of bList) {
     const r = compareDay(day, A_REL, bRel);
     if (!r) { console.log(`  ${day}  (not present in both)`); continue; }
     const pct = r.compared ? ((r.agree / r.compared) * 100).toFixed(1) : "n/a";
-    console.log(`  ${day}  ${String(r.compared).padStart(8)}  ${String(r.agree).padStart(6)} (${pct}%)  ${String(r.aOnly).padStart(6)}  ${String(r.bOnly).padStart(6)}`);
+    relabelTotal += r.relabels;
+    const relabelNote = r.relabels ? `   ${r.relabels} relabelling minute(s)` : "";
+    console.log(`  ${day}  ${String(r.compared).padStart(8)}  ${String(r.agree).padStart(6)} (${pct}%)  ${String(r.aOnly).padStart(6)}  ${String(r.bOnly).padStart(6)}${relabelNote}`);
     for (const i of r.issues) {
       const seen = REVIEWED.get(`${vantageOf(bRel)}\t${i.min}`);
       if (seen && !STRICT) {
@@ -278,6 +321,12 @@ for (const bRel of bList) {
 }
 
 console.log();
+if (relabelTotal) {
+  console.log(`${relabelTotal} minute(s) differed only by a fleet relabelling in flight —`);
+  console.log("identical stake, identical validator count, identical regions, and every");
+  console.log("differing name a suffix variant. Counted, not treated as divergence.");
+  console.log();
+}
 if (reviewedHits) {
   console.log(`${reviewedHits} finding(s) matched a reviewed entry in REVIEWED.tsv and are`);
   console.log(`reported above rather than failing this run. Run with --strict to ignore`);

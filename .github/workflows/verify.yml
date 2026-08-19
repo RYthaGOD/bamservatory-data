@@ -92,6 +92,21 @@ jobs:
       - name: compare vantages
         run: node compare.mjs --all
 
+      # What the comparison forgives, asserted before it is trusted.
+      #
+      # compare.mjs excuses a node-set difference when it is shaped like one of
+      # BAM fleet relabellings. That is a loosening of the only check that can
+      # tell a faithful recording from a corroborated one, so it is held to both
+      # directions: the real 2026-08-18 relabelling must be forgiven, and the
+      # real 2026-08-12 torn read must not be. The synthetic pass isolates each
+      # condition, because the archive alone cannot - dropping the stake test
+      # left the archive suite green.
+      - name: what the comparison forgives, against the archive
+        run: node test/compare-relabel.mjs
+
+      - name: and each condition of it, isolated
+        run: node test/compare-relabel-synthetic.mjs
+
   freshness:
     name: published data is current
     runs-on: ubuntu-latest
