@@ -27,9 +27,24 @@ permissions:
   contents: read
 
 jobs:
+
+# A job that hangs is worse than a job that fails.
+#
+# On 2026-08-18 the archive-integrity job stopped for three hours and twenty-three
+# minutes inside `apt-get install zstd` — the runner could not reach a mirror —
+# and was killed without ever running verify.sh. It left the run sitting
+# in_progress long enough that five later runs piled up behind it looking equally
+# stuck, and they had to be cancelled by hand to make the history readable again.
+# Nothing was wrong with the archive, which is the point: the check never got far
+# enough to have an opinion about it.
+#
+# These jobs finish in well under a minute. A cap an order of magnitude above that
+# turns an infrastructure hang into a prompt, honest failure that the next
+# scheduled run clears on its own.
   archive-integrity:
     name: archive integrity
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -46,6 +61,7 @@ jobs:
   pipeline-guards:
     name: pipeline guards
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -65,6 +81,7 @@ jobs:
   cross-vantage:
     name: cross-vantage agreement
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -78,6 +95,7 @@ jobs:
   freshness:
     name: published data is current
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: check the live endpoint has not gone stale
         run: |
