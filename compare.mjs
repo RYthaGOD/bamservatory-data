@@ -105,7 +105,7 @@ const daysIn = (rel) => {
 // A relabelling in flight is not a disagreement.
 //
 // BAM periodically renames its whole fleet, swapping every node's -1/-2 suffix.
-// Eight of these are on record between 2026-07-08 and 2026-08-18, and they are
+// Ten are on record between 2026-07-08 and 2026-08-21, and they are
 // getting more frequent. When one completes inside a single capture nothing here
 // notices. When it takes longer — the 2026-08-18 one took about three minutes,
 // passing through a state where both names were live at once — the vantages
@@ -138,7 +138,7 @@ const daysIn = (rel) => {
 // split between nodes while keeping the total was already invisible. This rule
 // widens that slightly, since a suffix flip is no longer flagged and would have
 // caught such a thing by accident. Worth stating rather than leaving implicit.
-// In all eight relabellings on record the flipped pairs carry identical per-node
+// In every relabelling on record the flipped pairs carry identical per-node
 // stake to the cent — fra-1 and fra-2 both held 26137171.91 through the
 // 2026-08-18 transition — so a tighter test is possible; it is not built because
 // the transitional captures also contain unpaired duplicates that a naive

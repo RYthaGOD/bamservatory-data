@@ -190,6 +190,8 @@ One long-lived container, one volume, one clock.
 | `recompute.mjs` | Rebuilds published verification rows from their evidence and diffs them |
 | `verify.sh` | Third-party verification. No credentials required |
 | `test/flatten-guard.sh` | Asserts the partial-response guard in both directions. Runs in CI |
+| `test/compare-relabel.mjs` | Asserts what `compare.mjs` forgives, against the real archive. Runs in CI |
+| `test/compare-relabel-synthetic.mjs` | The same, with each condition isolated on synthetic captures. Runs in CI |
 
 A Railway cron job would spawn a fresh container per run, and a volume admits
 only one active deployment — so capture runs as a service with an internal loop

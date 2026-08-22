@@ -4,7 +4,7 @@
 // default — two collectors reading the same API should see the same nodes. But
 // BAM renames its whole fleet every few days, swapping every node's -1/-2
 // suffix, and a rename that takes longer than one capture leaves the vantages
-// describing different instants of the same transition. Eight relabellings are
+// describing different instants of the same transition. Ten relabellings are
 // on record and they are getting more frequent.
 //
 // So compare.mjs excuses a node-set difference when it is relabel-shaped, and
