@@ -108,6 +108,14 @@ jobs:
       - name: flatten partial-response guard
         run: bash ./test/flatten-guard.sh
 
+      # The other script that deletes records with no second copy. It got the
+      # rule wrong twice and cost the evidence for 2026-08-15 and 2026-08-21,
+      # each on the run that archived the day after it. Asserted in both
+      # directions: an archived day must be trimmed, an unarchived one must
+      # survive however old it is.
+      - name: what rotate.sh may delete
+        run: bash ./test/rotate-evidence.sh
+
   cross-vantage:
     name: cross-vantage agreement
     runs-on: ubuntu-latest

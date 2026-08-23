@@ -188,8 +188,34 @@ One long-lived container, one volume, one clock.
 | `pipeline/probe-attestations.mjs` | Daily: has BAM published attestations yet? → `attestations.json` |
 | `pipeline/archive-evidence.sh` | Completed days of verification evidence → `verification/`, hashes → its own manifest |
 | `recompute.mjs` | Rebuilds published verification rows from their evidence and diffs them |
+
+### Two days of evidence are missing, and why
+
+`recompute.mjs` covers 725 of the 1,093 verification rows published so far. Most
+of the shortfall is simply that evidence archiving began on 2026-08-12, after the
+series did. Two days inside that window are genuinely lost: **2026-08-15 and
+2026-08-21**.
+
+Both went the same way. `rotate.sh` bounded the evidence log against a high-water
+mark — the newest day recorded as archived — so a day that failed to archive
+while later ones succeeded fell behind the mark and was trimmed anyway. Each was
+deleted on the very run that archived the day after it, and neither could be
+recovered afterwards because the records had no second copy.
+
+The rule is now membership in a set of days confirmed durable by a push, written
+by `publish.sh` only after it watches that push succeed — the same discipline
+`.archived_through` already applied to raw capture. A gap is preserved, and
+`archive-evidence.sh` publishes every complete day it finds rather than only
+yesterday's, so a missed run now repairs itself. `test/rotate-evidence.sh`
+asserts both halves.
+
+The rows for those two days are still published and still correct. What was lost
+is the ability to re-derive them from their own inputs, which is exactly the
+claim this repo makes about every other row — so it is stated here rather than
+left for someone to find in a row count.
 | `verify.sh` | Third-party verification. No credentials required |
 | `test/flatten-guard.sh` | Asserts the partial-response guard in both directions. Runs in CI |
+| `test/rotate-evidence.sh` | Asserts what `rotate.sh` may delete, in both directions. Runs in CI |
 | `test/compare-relabel.mjs` | Asserts what `compare.mjs` forgives, against the real archive. Runs in CI |
 | `test/compare-relabel-synthetic.mjs` | The same, with each condition isolated on synthetic captures. Runs in CI |
 

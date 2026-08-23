@@ -181,6 +181,33 @@ if [ -d "$ARCHIVE/.git" ]; then
         echo "$newest" > "$DIR/.archived_through"
         log "archive: durable through $newest"
       fi
+
+      # The same rule for evidence, and for the same reason — but as a set of
+      # days rather than a high-water mark.
+      #
+      # rotate.sh used to read the manifest in this clone directly, which was
+      # wrong twice over. It took the newest day recorded there, so a day that
+      # failed to archive while later ones succeeded was trimmed anyway: 2026-08-15
+      # and 2026-08-21 were both lost that way, each on the run that archived the
+      # day after it. And it read a manifest that might only exist locally, so a
+      # failed push followed by sync_repo's reset deleted evidence the archive
+      # never received.
+      #
+      # Written here, after a confirmed push, it can only ever name days that are
+      # durably on the remote. Listing them all means a gap is preserved and the
+      # next archive-evidence.sh run — which archives every complete day it finds,
+      # not just yesterday's — picks it back up on its own.
+      if [ "$VANTAGE" = "primary" ] && [ -f "$ARCHIVE/verification/MANIFEST.tsv" ]; then
+        if awk -F'\t' 'NR>1 && $2!="" {
+             n = split($2, p, "/"); if (n < 4) next
+             print p[n-2]"-"p[n-1]"-"substr(p[n],1,2)
+           }' "$ARCHIVE/verification/MANIFEST.tsv" | sort -u > "$DIR/.evidence_days.tmp"; then
+          mv "$DIR/.evidence_days.tmp" "$DIR/.evidence_days"
+          log "archive: evidence durable for $(wc -l < "$DIR/.evidence_days" | tr -d ' ') day(s)"
+        else
+          rm -f "$DIR/.evidence_days.tmp"
+        fi
+      fi
     else
       log "archive: push FAILED — will retry next cycle."
     fi

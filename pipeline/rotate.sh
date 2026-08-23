@@ -92,26 +92,40 @@ fi
 # published. That is precisely the fault the two markers on this volume already
 # exist to prevent, arriving by a third route.
 #
-# So the watermark comes from the evidence manifest itself: the newest day
-# actually recorded there. No manifest, no trimming.
-EV_MANIFEST="${REPO_DIR:-/data/repos}/archive/verification/MANIFEST.tsv"
-if [ -s "$EVIDENCE" ] && [ -f "$EV_MANIFEST" ]; then
-  ev_through=$(awk -F'\t' 'NR>1 && $2!="" {
-    n = split($2, p, "/"); if (n < 4) next
-    print p[n-2]"-"p[n-1]"-"substr(p[n],1,2)
-  }' "$EV_MANIFEST" | sort | tail -n1)
+# So the watermark is a SET of days, written by publish.sh only after the push
+# that made them durable. Two earlier versions of this were wrong:
+#
+#   * Reading the manifest in the local clone. That manifest can name a day whose
+#     commit never reached the remote, and sync_repo resets the clone at the top
+#     of the next cycle — so the evidence was deleted while the archive never
+#     received it.
+#   * Taking the newest day recorded, as a high-water mark. A day that failed to
+#     archive while later ones succeeded fell behind the mark and was trimmed
+#     anyway. 2026-08-15 and 2026-08-21 were both lost exactly that way, each on
+#     the run that archived the day after it. One missed run, one day gone.
+#
+# Membership, not a maximum: a record is discarded only if its own day is listed
+# as durably archived. A gap is therefore kept, and archive-evidence.sh — which
+# publishes every complete day it finds rather than only yesterday's — collects
+# it on the next run without anyone intervening.
+#
+# No list, no trimming. The file appears after the first confirmed push.
+EV_DAYS="$DIR/.evidence_days"
+if [ -s "$EVIDENCE" ] && [ -s "$EV_DAYS" ]; then
+  ev_keep="$EVIDENCE.keep.$$"
+  # ts is a fixed-offset prefix: `{"ts":"2026-08-09T...` puts the day at col 8.
+  awk -v F="$EV_DAYS" '
+    BEGIN { while ((getline d < F) > 0) if (d != "") archived[d] = 1 }
+    !(substr($0, 8, 10) in archived)
+  ' "$EVIDENCE" > "$ev_keep" 2>/dev/null
 
-  if [ -n "$ev_through" ]; then
-    ev_keep="$EVIDENCE.keep.$$"
-    awk -v w="$ev_through" 'substr($0,8,10) > w' "$EVIDENCE" > "$ev_keep" 2>/dev/null
-    ev_kept=$(wc -l < "$ev_keep" 2>/dev/null || echo 0)
-    ev_have=$(wc -l < "$EVIDENCE" 2>/dev/null || echo 0)
-    if [ "$ev_kept" -lt "$ev_have" ]; then
-      mv "$ev_keep" "$EVIDENCE"
-      echo "$(date -u +%FT%TZ) rotated verification-evidence.jsonl → $ev_kept records after $ev_through" >> "$DIR/ticks.log"
-    else
-      rm -f "$ev_keep"
-    fi
+  ev_kept=$(wc -l < "$ev_keep" 2>/dev/null || echo 0)
+  ev_have=$(wc -l < "$EVIDENCE" 2>/dev/null || echo 0)
+  if [ "$ev_kept" -lt "$ev_have" ]; then
+    mv "$ev_keep" "$EVIDENCE"
+    echo "$(date -u +%FT%TZ) rotated verification-evidence.jsonl → $ev_kept records, dropped $((ev_have - ev_kept)) already archived" >> "$DIR/ticks.log"
+  else
+    rm -f "$ev_keep"
   fi
 fi
 
