@@ -163,7 +163,16 @@ jobs:
           MAX_AGE_MIN=90
           URL=https://rythagod.github.io/bamservatory/metrics.json
 
-          curl -fsSL "$URL" -o metrics.json
+          # Retry before believing it. This job is a dead-man's switch for a
+          # stalled collector, and on 2026-08-25 it went red because GitHub Pages
+          # answered one request with a 503 — the data was current, the CDN
+          # hiccupped. A switch that trips on someone else's transient is a switch
+          # people learn to ignore, which is the one thing it cannot afford.
+          #
+          # This cannot mask the fault it exists to catch: a stalled collector
+          # serves a perfectly good metrics.json with an old generatedAt, so it
+          # fails the age check below rather than the fetch.
+          curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors --max-time 60 "$URL" -o metrics.json
           GENERATED=$(node -e "console.log(require('./metrics.json').generatedAt)")
           AGE=$(node -e "console.log(Math.round((Date.now()-new Date('$GENERATED'))/60000))")
 
