@@ -22,10 +22,19 @@ on:
     #
     # That job is the dead-man's switch for a stalled collector, and it is the
     # one check here that cannot lean on the push trigger, because a stalled
-    # collector stops pushing. Until this line it was watching for a failure
-    # whose first symptom silences the thing that wakes it up: with the pushes
-    # gone it fell back to the six-hourly cron, so a stall it advertises
-    # catching within ninety minutes could sit unreported for six hours.
+    # collector stops pushing. Its first symptom silences the thing that would
+    # wake the switch, so without a schedule of its own it fell back to the
+    # six-hourly cron above.
+    #
+    # Measured afterwards rather than assumed, and the result is worth leaving
+    # here: GitHub does not honour this. Between 04:21 and 12:05 on 2026-09-04
+    # it fired once in nearly eight hours, and the six-hourly cron beside it
+    # arrives anywhere from 267 to 453 minutes apart against a nominal 360.
+    # Scheduled workflows are best-effort, and this repo pushes about ninety-six
+    # times a day. So this line helps and costs nothing, but it does not turn
+    # the ninety-minute threshold below into a promise. Keeping that promise
+    # needs a checker that runs neither on GitHub's scheduler nor on the
+    # collector's own host, and there is not one yet.
     - cron: "41 * * * *"
   push:
     branches: [main]
@@ -192,7 +201,13 @@ jobs:
           #
           # Publishing runs on a ~15 minute throttle. 90 minutes tolerates a
           # redeploy, a transient GitHub outage and a missed cycle without
-          # crying wolf, while still catching a genuine stall within the hour.
+          # crying wolf.
+          #
+          # It does not bound how long a stall goes unreported. That is set by
+          # how often this job runs, which is set by GitHub, which is best
+          # effort — see the schedule block at the top for what it actually
+          # delivered when measured. This job answers "is the published data
+          # stale right now", and it answers it only as often as it is asked.
           MAX_AGE_MIN=90
           URL=https://rythagod.github.io/bamservatory/metrics.json
 
