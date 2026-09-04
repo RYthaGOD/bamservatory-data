@@ -14,13 +14,34 @@ name: verify
 
 on:
   schedule:
-    # Every six hours. The archive only gains a file once per UTC day, so more
-    # frequent runs would mostly re-prove the same bytes; the staleness check
-    # below is what benefits from running often, and six hours is well inside
-    # the window in which a dead collector matters.
+    # Every six hours for the checks that read the archive. It only gains a file
+    # once per UTC day, so more frequent runs would mostly re-prove the same
+    # bytes.
     - cron: "17 */6 * * *"
+    # Hourly, for the staleness check alone.
+    #
+    # That job is the dead-man's switch for a stalled collector, and it is the
+    # one check here that cannot lean on the push trigger, because a stalled
+    # collector stops pushing. Until this line it was watching for a failure
+    # whose first symptom silences the thing that wakes it up: with the pushes
+    # gone it fell back to the six-hourly cron, so a stall it advertises
+    # catching within ninety minutes could sit unreported for six hours.
+    - cron: "41 * * * *"
   push:
     branches: [main]
+    # The collector pushes about ninety-six times a day and all but a handful
+    # carry only verification.csv - 282 of the last 300 at the time of writing.
+    # No job here reads that file. Re-running four checks against byte-identical
+    # inputs is not more proof, and it is not free: an unreviewed finding fails
+    # every one of those runs, so a single divergence becomes a day of red.
+    # Three findings between 2026-08-25 and 2026-09-04 produced twelve failures
+    # between them, which is how a check earns a reputation for being noise.
+    #
+    # A push that actually adds a day to the archive carries MANIFEST.tsv and
+    # the day file alongside it, so it still runs everything.
+    paths-ignore:
+      - "verification.csv"
+      - "attestations.json"
   workflow_dispatch:
 
 permissions:
@@ -43,6 +64,10 @@ jobs:
 # scheduled run clears on its own.
   archive-integrity:
     name: archive integrity
+    # The hourly cron exists for the staleness check below. Re-reading the whole
+    # archive twenty-four times a day would reintroduce exactly the noise the
+    # push filter above removes.
+    if: github.event.schedule != '41 * * * *'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -75,6 +100,10 @@ jobs:
 
   pipeline-guards:
     name: pipeline guards
+    # The hourly cron exists for the staleness check below. Re-reading the whole
+    # archive twenty-four times a day would reintroduce exactly the noise the
+    # push filter above removes.
+    if: github.event.schedule != '41 * * * *'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -118,6 +147,10 @@ jobs:
 
   cross-vantage:
     name: cross-vantage agreement
+    # The hourly cron exists for the staleness check below. Re-reading the whole
+    # archive twenty-four times a day would reintroduce exactly the noise the
+    # push filter above removes.
+    if: github.event.schedule != '41 * * * *'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
