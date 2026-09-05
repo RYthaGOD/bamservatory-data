@@ -26,14 +26,21 @@ on:
     # wake the switch, so without a schedule of its own it fell back to the
     # six-hourly cron above.
     #
-    # Measured afterwards rather than assumed, and the result is worth leaving
-    # here: GitHub does not honour this. Between 04:21 and 12:05 on 2026-09-04
-    # it fired once in nearly eight hours, and the six-hourly cron beside it
-    # arrives anywhere from 267 to 453 minutes apart against a nominal 360.
-    # Scheduled workflows are best-effort, and this repo pushes about ninety-six
-    # times a day. So this line helps and costs nothing, but it does not turn
-    # the ninety-minute threshold below into a promise. Keeping that promise
-    # needs a checker that runs neither on GitHub's scheduler nor on the
+    # Measured afterwards rather than assumed. GitHub honours this loosely at
+    # best: over the first twenty-two hours it fired six times rather than
+    # twenty-two, at gaps of 125 to 284 minutes. The six-hourly cron beside it
+    # arrived 262 to 405 minutes apart against a nominal 360. Scheduled
+    # workflows are best-effort and this repo pushes about ninety-six times a
+    # day, which is not a combination that produces punctual crons.
+    #
+    # What it buys is still real, because the staleness job runs on both crons:
+    # ten executions in those twenty-two hours, worst gap 262 minutes, typical
+    # gap around 140. Against the six-hourly-only fallback that applied when the
+    # collector is down — which is exactly when this matters — that is an
+    # improvement worth keeping.
+    #
+    # It is not a ninety-minute promise, and nothing on GitHub cron can be one.
+    # That needs a checker running neither on GitHub's scheduler nor on the
     # collector's own host, and there is not one yet.
     - cron: "41 * * * *"
   push:
