@@ -1,0 +1,30 @@
+# Separate status: a fresh publication must never clear an archive failure.
+name: freshness
+
+on:
+  schedule:
+    # Best effort; GitHub does not guarantee punctual execution.
+    - cron: "41 * * * *"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/freshness.yml"
+      - "check-freshness.mjs"
+      - "test/freshness.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  freshness:
+    name: published data is current
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: node test/freshness.mjs
+      - run: node check-freshness.mjs

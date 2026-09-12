@@ -18,43 +18,13 @@ on:
     # once per UTC day, so more frequent runs would mostly re-prove the same
     # bytes.
     - cron: "17 */6 * * *"
-    # Hourly, for the staleness check alone.
-    #
-    # That job is the dead-man's switch for a stalled collector, and it is the
-    # one check here that cannot lean on the push trigger, because a stalled
-    # collector stops pushing. Its first symptom silences the thing that would
-    # wake the switch, so without a schedule of its own it fell back to the
-    # six-hourly cron above.
-    #
-    # Measured afterwards rather than assumed. GitHub honours this loosely at
-    # best: over the first twenty-two hours it fired six times rather than
-    # twenty-two, at gaps of 125 to 284 minutes. The six-hourly cron beside it
-    # arrived 262 to 405 minutes apart against a nominal 360. Scheduled
-    # workflows are best-effort and this repo pushes about ninety-six times a
-    # day, which is not a combination that produces punctual crons.
-    #
-    # What it buys is still real, because the staleness job runs on both crons:
-    # ten executions in those twenty-two hours, worst gap 262 minutes, typical
-    # gap around 140. Against the six-hourly-only fallback that applied when the
-    # collector is down — which is exactly when this matters — that is an
-    # improvement worth keeping.
-    #
-    # It is not a ninety-minute promise, and nothing on GitHub cron can be one.
-    # That needs a checker running neither on GitHub's scheduler nor on the
-    # collector's own host, and there is not one yet.
-    - cron: "41 * * * *"
+    # Hourly freshness lives in freshness.yml so it cannot clear this badge.
   push:
     branches: [main]
-    # The collector pushes about ninety-six times a day and all but a handful
-    # carry only verification.csv - 282 of the last 300 at the time of writing.
-    # No job here reads that file. Re-running four checks against byte-identical
-    # inputs is not more proof, and it is not free: an unreviewed finding fails
-    # every one of those runs, so a single divergence becomes a day of red.
-    # Three findings between 2026-08-25 and 2026-09-04 produced twelve failures
-    # between them, which is how a check earns a reputation for being noise.
-    #
-    # A push that actually adds a day to the archive carries MANIFEST.tsv and
-    # the day file alongside it, so it still runs everything.
+    # Open-day verification rows arrive about every 15 minutes, but cannot be
+    # recomputed until their evidence is archived. A completed day carries its
+    # manifest and evidence file and triggers the full suite. The hourly
+    # freshness workflow separately checks the live verification timestamp.
     paths-ignore:
       - "verification.csv"
       - "attestations.json"
@@ -75,15 +45,11 @@ jobs:
 # Nothing was wrong with the archive, which is the point: the check never got far
 # enough to have an opinion about it.
 #
-# These jobs finish in well under a minute. A cap an order of magnitude above that
-# turns an infrastructure hang into a prompt, honest failure that the next
-# scheduled run clears on its own.
+# These jobs normally finish within a few minutes. A ten-minute cap turns an
+# infrastructure hang into a visible failure rather than an indefinitely queued
+# check.
   archive-integrity:
     name: archive integrity
-    # The hourly cron exists for the staleness check below. Re-reading the whole
-    # archive twenty-four times a day would reintroduce exactly the noise the
-    # push filter above removes.
-    if: github.event.schedule != '41 * * * *'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -116,10 +82,6 @@ jobs:
 
   pipeline-guards:
     name: pipeline guards
-    # The hourly cron exists for the staleness check below. Re-reading the whole
-    # archive twenty-four times a day would reintroduce exactly the noise the
-    # push filter above removes.
-    if: github.event.schedule != '41 * * * *'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -163,10 +125,6 @@ jobs:
 
   cross-vantage:
     name: cross-vantage agreement
-    # The hourly cron exists for the staleness check below. Re-reading the whole
-    # archive twenty-four times a day would reintroduce exactly the noise the
-    # push filter above removes.
-    if: github.event.schedule != '41 * * * *'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -175,6 +133,12 @@ jobs:
         with:
           # zstd support in node:zlib landed in 23.8. compare.mjs relies on it.
           node-version: "24"
+
+      - name: comparison must fail on incomplete or unreviewed data
+        run: node test/compare-failures.mjs
+
+      - name: September 9 review matches the evidence
+        run: node test/compare-september9.mjs
 
       - name: compare vantages
         run: node compare.mjs --all
@@ -194,62 +158,26 @@ jobs:
       - name: and each condition of it, isolated
         run: node test/compare-relabel-synthetic.mjs
 
+  evidence-recompute:
+    name: verification evidence reproduces published rows
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: node test/recompute-failures.mjs
+      - run: node recompute.mjs --require-evidence
+
   freshness:
     name: published data is current
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: check the live endpoint has not gone stale
-        run: |
-          # A dead collector is invisible from the outside: the last good
-          # metrics.json keeps being served indefinitely, so the dashboard looks
-          # fine while the numbers quietly age. This is the dead-man's switch —
-          # if capture stops, this job goes red.
-          #
-          # Publishing runs on a ~15 minute throttle. 90 minutes tolerates a
-          # redeploy, a transient GitHub outage and a missed cycle without
-          # crying wolf.
-          #
-          # It does not bound how long a stall goes unreported. That is set by
-          # how often this job runs, which is set by GitHub, which is best
-          # effort — see the schedule block at the top for what it actually
-          # delivered when measured. This job answers "is the published data
-          # stale right now", and it answers it only as often as it is asked.
-          MAX_AGE_MIN=90
-          URL=https://rythagod.github.io/bamservatory/metrics.json
-
-          # Retry before believing it. This job is a dead-man's switch for a
-          # stalled collector, and on 2026-08-25 it went red because GitHub Pages
-          # answered one request with a 503 — the data was current, the CDN
-          # hiccupped. A switch that trips on someone else's transient is a switch
-          # people learn to ignore, which is the one thing it cannot afford.
-          #
-          # This cannot mask the fault it exists to catch: a stalled collector
-          # serves a perfectly good metrics.json with an old generatedAt, so it
-          # fails the age check below rather than the fetch.
-          curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors --max-time 60 "$URL" -o metrics.json
-          GENERATED=$(node -e "console.log(require('./metrics.json').generatedAt)")
-          AGE=$(node -e "console.log(Math.round((Date.now()-new Date('$GENERATED'))/60000))")
-
-          echo "generatedAt : $GENERATED"
-          echo "age         : ${AGE} min (limit ${MAX_AGE_MIN})"
-
-          # Also assert the provenance a consumer is told to rely on is present.
-          node -e "
-            const m = require('./metrics.json');
-            const fail = (s) => { console.error('MISSING: ' + s); process.exitCode = 1; };
-            // Presence and plausibility, not a pinned value — this job exists to
-            // catch a stalled or malformed publish, and should not go red merely
-            // because the contract was legitimately versioned.
-            if (!Number.isInteger(m.schemaVersion) || m.schemaVersion < 1) fail('schemaVersion');
-            if (!m.provenance?.collector) fail('provenance.collector');
-            if (!m.provenance?.archive) fail('provenance.archive');
-            for (const k of ['summary.csv','nodes.csv','detections.log'])
-              if (!String(m.provenance?.inputs?.[k] ?? '').startsWith('sha256:')) fail('digest for ' + k);
-            if (!process.exitCode) console.log('provenance block intact');
-          "
-
-          if [ "$AGE" -gt "$MAX_AGE_MIN" ]; then
-            echo "::error::published data is ${AGE} min old (limit ${MAX_AGE_MIN}). Capture or publishing has stalled."
-            exit 1
-          fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: node test/freshness.mjs
+      - run: node check-freshness.mjs

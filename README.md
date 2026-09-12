@@ -1,14 +1,19 @@
 # bamservatory-data
 
 [![verify](https://github.com/RYthaGOD/bamservatory-data/actions/workflows/verify.yml/badge.svg)](https://github.com/RYthaGOD/bamservatory-data/actions/workflows/verify.yml)
+[![freshness](https://github.com/RYthaGOD/bamservatory-data/actions/workflows/freshness.yml/badge.svg)](https://github.com/RYthaGOD/bamservatory-data/actions/workflows/freshness.yml)
 
 The capture node and public raw archive behind [BAMservatory](https://rythagod.github.io/bamservatory/).
 
-That badge is the point of this repo in one line. It runs on GitHub's
-infrastructure, on a schedule, and checks three things the operator cannot
-quietly influence: every archived day still hashes to what the manifest
-recorded, the three vantages still agree, and the published dashboard has not
-gone stale. A red run is visible to anyone.
+The **verify** badge covers archive integrity, cross-vantage comparison,
+pipeline guards, recomputation of verification rows from archived evidence,
+and live data freshness. Every run executes all five jobs. It runs on archive
+or code changes and on a six-hour schedule.
+
+The separate **freshness** badge checks publication, capture and verification
+timestamps hourly, with a 90-minute age limit and bounded HTTP retries. A green
+freshness result cannot clear a failed archive check. Both schedules are best
+effort: GitHub may delay runs, so this is not a guaranteed alert deadline.
 
 This repo exists so that nothing on the dashboard has to be taken on trust. It
 holds the primary record — what the public BAM API returned, as captured — plus
@@ -141,6 +146,7 @@ vantage can be identified rather than merely flagged.
 
 ```bash
 node compare.mjs --all
+node compare.mjs --day 2026-09-09 --b vantage/ams/raw
 ```
 
 Minute by minute, this checks that both vantages saw the same node set, the same
@@ -169,6 +175,12 @@ divergence at any other minute or vantage. `node compare.mjs --all --strict`
 ignores the file entirely.
 
 It records that someone looked. It is not a way to make a red run green.
+
+Requested comparisons fail if a selected vantage has no overlapping data, a
+day has no shared minutes, or a capture cannot be read or validated. Every
+finding is checked against the review ledger; reporting does not stop after
+the first ten. See the [September 9 incident review](reviews/2026-09-09-sqq.md)
+for the original evidence and the monitoring faults found while investigating.
 
 ## Architecture
 

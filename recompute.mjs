@@ -13,6 +13,7 @@
 //   node recompute.mjs                        # every row that has evidence
 //   node recompute.mjs --day 2026-08-12       # one archived day
 //   node recompute.mjs --ts 2026-08-12T04:07:11Z
+//   node recompute.mjs --require-evidence     # CI: an empty check cannot pass
 //
 // This proves the transform, not the sources. Evidence gathered by the same
 // process it vouches for cannot establish that BAM or Jito told the truth, and
@@ -30,8 +31,10 @@ const arg = (n, d) => { const i = process.argv.indexOf(n); return i >= 0 ? proce
 const ROOT = arg("--root", ".");
 const DAY = arg("--day", null);
 const TS = arg("--ts", null);
+const REQUIRE_EVIDENCE = process.argv.includes("--require-evidence");
 const EVIDENCE_DIR = path.join(ROOT, "verification");
 const CSV = path.join(ROOT, "verification.csv");
+let malformedEvidence = 0;
 
 // ── the computation, exactly as verify-sources.mjs performs it ───────────────
 // Deliberately a transcription rather than a shared import. If both sides called
@@ -98,10 +101,11 @@ function recompute(ev) {
 // ── inputs ───────────────────────────────────────────────────────────────────
 const readEvidence = () => {
   const out = [];
-  const push = (buf) => {
+  const push = (buf, archived = false) => {
     for (const line of buf.toString("utf8").split(/\r?\n/)) {
       if (!line.trim()) continue;
-      try { out.push(JSON.parse(line)); } catch { /* a truncated tail is not a row */ }
+      try { out.push(JSON.parse(line)); }
+      catch { if (archived) malformedEvidence++; /* a live truncated tail is not a row */ }
     }
   };
   // The live file first, then archived days. A row published minutes ago has not
@@ -114,7 +118,7 @@ const readEvidence = () => {
       for (const e of fs.readdirSync(d, { withFileTypes: true })) {
         const p = path.join(d, e.name);
         if (e.isDirectory()) walk(p);
-        else if (p.endsWith(".jsonl.zst")) push(zlib.zstdDecompressSync(fs.readFileSync(p)));
+        else if (p.endsWith(".jsonl.zst")) push(zlib.zstdDecompressSync(fs.readFileSync(p)), true);
       }
     };
     walk(EVIDENCE_DIR);
@@ -150,7 +154,7 @@ if (!evidence.length) {
   console.log("    at a time, like the raw captures, so the newest checkable day is yesterday.");
   console.log("  • Rows published before evidence recording was deployed have none, and");
   console.log("    cannot be recomputed — only read.");
-  process.exit(0);
+  process.exit(REQUIRE_EVIDENCE ? 1 : 0);
 }
 
 console.log(`recomputing ${evidence.length} row(s) from published evidence\n`);
@@ -187,4 +191,6 @@ console.log("This checks the transform, not the sources. It shows the published 
 console.log("the one these inputs produce — not that BAM or Jito reported truthfully, which");
 console.log("no amount of our own evidence could establish.");
 
-process.exit(disagreements.length ? 1 : 0);
+if (REQUIRE_EVIDENCE && (!checked || missing || malformedEvidence))
+  console.error(`Evidence check incomplete: ${checked} checked, ${missing} without a published row, ${malformedEvidence} malformed archived records.`);
+process.exit(disagreements.length || (REQUIRE_EVIDENCE && (!checked || missing || malformedEvidence)) ? 1 : 0);

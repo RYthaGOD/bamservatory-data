@@ -6,7 +6,7 @@
 // corroborated one.
 //
 //   node compare.mjs --day 2026-08-09
-//   node compare.mjs --day 2026-08-09 --b vantage/sin
+//   node compare.mjs --day 2026-08-09 --b vantage/sin/raw
 //   node compare.mjs --all
 //
 // Needs no credentials and no cooperation from the operator. Run it on a clone.
@@ -39,6 +39,16 @@ const A_REL = arg("--a", "raw");
 const B_REL = arg("--b", null);
 const STAKE_TOL = Number(arg("--stake-tolerance", "0.5"));   // percent
 const VAL_TOL = Number(arg("--validator-tolerance", "3"));   // absolute count
+const REQUESTED = has("--all") || has("--day");
+if (![STAKE_TOL, VAL_TOL].every((v) => Number.isFinite(v) && v >= 0)) {
+  console.error("Tolerances must be finite, non-negative numbers.");
+  process.exit(2);
+}
+if (has("--day") && !/^\d{4}-\d{2}-\d{2}$/.test(arg("--day", ""))) {
+  console.error("--day requires YYYY-MM-DD.");
+  process.exit(2);
+}
+const readErrors = new Set();
 
 // ── reviewed divergences ─────────────────────────────────────────────────────
 // Findings that have been investigated, explained, and recorded in REVIEWED.tsv.
@@ -81,7 +91,7 @@ if (bList.length === 0) {
   console.log("No witness vantage found. Nothing to cross-check.");
   console.log("A single collector cannot corroborate itself — this check is only");
   console.log("meaningful once a second vantage is publishing.");
-  process.exit(0);
+  process.exit(REQUESTED ? 1 : 0);
 }
 
 const dayPath = (rel, day) => {
@@ -162,14 +172,23 @@ const loadDay = (rel, day) => {
     // Report and carry on rather than aborting the run. A file that will not
     // decompress is itself a finding — verify.sh will name it precisely — and
     // stopping here would hide agreement or divergence on every other day.
-    console.error(`  ! ${rel} ${day}: cannot decompress (${e.code || e.message}). Run ./verify.sh.`);
+    readErrors.add(`${rel} ${day}: cannot decompress (${e.code || e.message}). Run ./verify.sh.`);
     return null;
   }
   const byMinute = new Map();
   for (const line of text.split("\n")) {
     if (!line) continue;
     let r;
-    try { r = JSON.parse(line); } catch { continue; }
+    try { r = JSON.parse(line); }
+    catch { readErrors.add(`malformed JSON in ${p}`); continue; }
+    if (!r || typeof r.ts !== "string" || !r.ts.startsWith(day + "T") ||
+        !Number.isFinite(Date.parse(r.ts)) ||
+        !Number.isFinite(r.stake?.bam_stake) || r.stake.bam_stake < 0 ||
+        !Array.isArray(r.nodes) || !Array.isArray(r.validators) ||
+        r.nodes.some((n) => !n || typeof n.bam_node !== "string" || !n.bam_node)) {
+      readErrors.add(`invalid capture in ${p} at ${r?.ts ?? "unknown time"}`);
+      continue;
+    }
     const minute = r.ts.slice(0, 16);
     if (byMinute.has(minute)) continue;
     byMinute.set(minute, {
@@ -289,7 +308,9 @@ const compareDay = (day, aRel, bRel) => {
     }
 
     if (problems.length === 0) res.agree++;
-    else if (res.issues.length < 10) res.issues.push({ min, problems });
+    // Review every finding. Truncating this array could hide an unreviewed
+    // eleventh finding when the first ten were already in REVIEWED.tsv.
+    else res.issues.push({ min, problems });
   }
   return res;
 };
@@ -297,6 +318,7 @@ const compareDay = (day, aRel, bRel) => {
 console.log(`cross-vantage agreement — A = ${A_REL}`);
 
 let anyDivergence = false;
+let incomplete = false;
 let reviewedHits = 0;
 let relabelTotal = 0;
 for (const bRel of bList) {
@@ -310,6 +332,7 @@ for (const bRel of bList) {
     console.log(overlap.length
       ? `  no --day given. Overlapping days: ${overlap.join(", ")}`
       : `  no overlapping days yet — the witness has not completed a full UTC day.`);
+    if (REQUESTED) incomplete = true;
     continue;
   }
 
@@ -317,7 +340,8 @@ for (const bRel of bList) {
   console.log("  day         compared   agree   A-only  B-only");
   for (const day of days) {
     const r = compareDay(day, A_REL, bRel);
-    if (!r) { console.log(`  ${day}  (not present in both)`); continue; }
+    if (!r) { console.log(`  ${day}  (missing or unreadable at a selected vantage)`); incomplete = true; continue; }
+    if (!r.compared) incomplete = true;
     const pct = r.compared ? ((r.agree / r.compared) * 100).toFixed(1) : "n/a";
     relabelTotal += r.relabels;
     const relabelNote = r.relabels ? `   ${r.relabels} relabelling minute(s)` : "";
@@ -349,8 +373,12 @@ if (reviewedHits) {
   console.log(`that file and treat every finding as a failure.`);
   console.log();
 }
+for (const error of readErrors) console.error(error);
+if (incomplete || readErrors.size) console.error("Comparison incomplete: missing, unreadable, invalid, or non-overlapping data. This is not a pass.");
 console.log(anyDivergence
   ? "Divergence found. Investigate before relying on either vantage."
+  : incomplete || readErrors.size
+    ? "Agreement could not be established for all requested data."
   : reviewedHits
     ? "No divergence beyond tolerance that has not already been reviewed."
     : "No divergence beyond tolerance.");
@@ -359,4 +387,4 @@ console.log("Agreement means two independent collectors saw the same thing. It d
 console.log("not mean the API told the truth — both could be shown the same false");
 console.log("view. That gap closes only with attestations, not with more vantages.");
 
-process.exit(anyDivergence ? 1 : 0);
+process.exit(anyDivergence || incomplete || readErrors.size ? 1 : 0);
