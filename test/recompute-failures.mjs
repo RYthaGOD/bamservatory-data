@@ -39,4 +39,11 @@ test("CI evidence checking cannot pass an empty, missing, malformed or changed i
   const changed = row.split(","); changed[1] = String(Number(changed[1]) + 1);
   fs.writeFileSync(path.join(dir, "verification.csv"), csv[0] + "\n" + changed.join(",") + "\n");
   assert.equal(run().status, 1, "a changed published figure must fail");
+  for (const rows of [[changed.join(","), row], [row, changed.join(",")], [row, row]]) {
+    fs.writeFileSync(path.join(dir, "verification.csv"), csv[0] + "\n" + rows.join("\n") + "\n");
+    const result = run();
+    assert.equal(result.status, 1, "duplicate timestamps must fail regardless of row order or agreement");
+    assert.match(result.stderr, /Duplicate published timestamp/);
+    assert.ok(result.stderr.includes(ts));
+  }
 });

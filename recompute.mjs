@@ -135,7 +135,14 @@ const readPublished = () => {
     const c = line.split(",");
     const row = {};
     hdr.forEach((name, i) => { row[name] = (c[i] ?? "").trim(); });
-    if (row.ts) m.set(row.ts, row);
+    if (row.ts) {
+      // A later row must not overwrite an earlier published disagreement.
+      if (m.has(row.ts)) {
+        console.error(`Duplicate published timestamp: ${row.ts} in ${CSV}`);
+        process.exit(1);
+      }
+      m.set(row.ts, row);
+    }
   }
   return m;
 };
