@@ -139,6 +139,8 @@ jobs:
 
       - name: September 9 review matches the evidence
         run: node test/compare-september9.mjs
+      - name: September 15 review matches the evidence
+        run: node test/compare-september15.mjs
 
       - name: compare vantages
         run: node compare.mjs --all
