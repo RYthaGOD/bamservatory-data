@@ -17,12 +17,16 @@ jobs:
     name: alert reaches the owner
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    concurrency:
+      group: ci-alert-alert-self-test
+      cancel-in-progress: false
     env:
       GH_TOKEN: ${{ github.token }}
       WORKFLOW: alert self-test
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       EVENT: ${{ github.event_name }}
       OWNER: ${{ github.repository_owner }}
+      LIST: repos/${{ github.repository }}/issues?state=open&labels=ci-red&per_page=100
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -32,16 +36,24 @@ jobs:
         run: node ci-alert.mjs
         env:
           NEEDS: '{"selftest":{"result":"failure"}}'
+      # Read back through the same REST listing ci-alert.mjs uses, and retried
+      # briefly: a check run a second after creation once missed the issue.
       - name: which is open, labelled, and mentions the owner
         run: |
-          gh issue list --repo "$GITHUB_REPOSITORY" --state open --label ci-red \
-            --json title,body --jq '.[] | select(.title == "CI red: alert self-test") | .body' \
-            | grep -q "^@$OWNER"
+          for i in 1 2 3 4 5 6; do
+            gh api "$LIST" --jq '.[] | select(.title == "CI red: alert self-test") | .body' \
+              | grep -q "^@$OWNER" && exit 0
+            sleep 5
+          done
+          exit 1
       - name: a green run closes it
         run: node ci-alert.mjs
         env:
           NEEDS: '{"selftest":{"result":"success"}}'
       - name: and nothing is left open
         run: |
-          test -z "$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --label ci-red \
-            --json title --jq '.[] | select(.title == "CI red: alert self-test") | .title')"
+          for i in 1 2 3 4 5 6; do
+            test -z "$(gh api "$LIST" --jq '.[] | select(.title == "CI red: alert self-test") | .title')" && exit 0
+            sleep 5
+          done
+          exit 1

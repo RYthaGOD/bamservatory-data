@@ -192,6 +192,11 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # One alert at a time per workflow, so two red runs that finish together
+    # update one incident instead of racing to open two.
+    concurrency:
+      group: ci-alert-${{ github.workflow }}
+      cancel-in-progress: false
     permissions:
       contents: read
       issues: write

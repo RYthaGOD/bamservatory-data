@@ -59,8 +59,11 @@ export function alert({ env, gh, now = new Date() }) {
   const repo = ["--repo", env.GITHUB_REPOSITORY];
   const v = verdict(JSON.parse(env.NEEDS || "{}"));
   const title = `CI red: ${env.WORKFLOW}`;
-  const open = JSON.parse(gh(["issue", "list", ...repo, "--state", "open", "--label", LABEL,
-    "--json", "number,title,body", "--limit", "100"]) || "[]").find((i) => i.title === title);
+  // Listed through REST rather than `gh issue list`: the self-test showed the
+  // latter can miss an issue created a second earlier, and two red runs of one
+  // workflow that close together must find the same incident, not open two.
+  const open = JSON.parse(gh(["api", `repos/${env.GITHUB_REPOSITORY}/issues?state=open&labels=${LABEL}&per_page=100`]) || "[]")
+    .find((i) => !i.pull_request && i.title === title);
   const failed = v.red.map(([job, r]) => `${job} (${r})`).join(", ");
   const line = `${env.RUN_URL} (${env.EVENT}, ${now.toISOString()}) — ${failed}`;
 

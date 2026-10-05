@@ -20,8 +20,8 @@ function fakeGh() {
   const gh = (args) => {
     calls.push(args);
     const val = (flag) => args[args.indexOf(flag) + 1];
-    if (args[0] === "issue" && args[1] === "list")
-      return JSON.stringify(issues.filter((i) => i.open && i.labels.includes(val("--label"))));
+    if (args[0] === "api" && args[1].startsWith(`repos/o/r/issues?state=open&labels=${LABEL}&`))
+      return JSON.stringify(issues.filter((i) => i.open && i.labels.includes(LABEL)));
     if (args[0] === "issue" && args[1] === "create") {
       issues.push({ number: issues.length + 1, title: val("--title"), body: val("--body"), labels: [val("--label")], open: true });
       return "";
