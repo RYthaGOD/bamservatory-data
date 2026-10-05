@@ -183,3 +183,28 @@ jobs:
           node-version: "24"
       - run: node test/freshness.mjs
       - run: node check-freshness.mjs
+
+  # Carries a red result to a person: one issue per incident, mentioning the
+  # owner, closed by the next green run. Why it exists is in ci-alert.mjs.
+  alert:
+    name: alert on red
+    needs: [archive-integrity, pipeline-guards, cross-vantage, evidence-recompute, freshness]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: node ci-alert.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEEDS: ${{ toJSON(needs) }}
+          WORKFLOW: ${{ github.workflow }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EVENT: ${{ github.event_name }}
+          OWNER: ${{ github.repository_owner }}

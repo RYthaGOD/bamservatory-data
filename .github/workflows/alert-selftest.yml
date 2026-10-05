@@ -1,0 +1,47 @@
+# Proves the red-CI alert still reaches a person, end to end, with the same
+# token and permissions the real workflows use. Run it by hand after changing
+# ci-alert.mjs or the repository's settings: it opens a "CI red: alert
+# self-test" issue that mentions the owner, checks it exists, then closes it as
+# a green run would. Expect one notification.
+name: alert self-test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  selftest:
+    name: alert reaches the owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      WORKFLOW: alert self-test
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      EVENT: ${{ github.event_name }}
+      OWNER: ${{ github.repository_owner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: a red run opens one issue
+        run: node ci-alert.mjs
+        env:
+          NEEDS: '{"selftest":{"result":"failure"}}'
+      - name: which is open, labelled, and mentions the owner
+        run: |
+          gh issue list --repo "$GITHUB_REPOSITORY" --state open --label ci-red \
+            --json title,body --jq '.[] | select(.title == "CI red: alert self-test") | .body' \
+            | grep -q "^@$OWNER"
+      - name: a green run closes it
+        run: node ci-alert.mjs
+        env:
+          NEEDS: '{"selftest":{"result":"success"}}'
+      - name: and nothing is left open
+        run: |
+          test -z "$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --label ci-red \
+            --json title --jq '.[] | select(.title == "CI red: alert self-test") | .title')"
