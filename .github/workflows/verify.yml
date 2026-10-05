@@ -123,6 +123,17 @@ jobs:
       - name: what rotate.sh may delete
         run: bash ./test/rotate-evidence.sh
 
+      # The verification run reads on-chain stake from one RPC provider, and that
+      # provider refused every request for 34 hours from 2026-09-24. It now falls
+      # back to a second endpoint. Asserted in both directions against the real
+      # script: a refusal, a JSON-RPC error and an empty answer fall back, and
+      # when every endpoint fails no row is written at all.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: verification survives one RPC provider refusing
+        run: node test/verify-sources-fallback.mjs
+
   cross-vantage:
     name: cross-vantage agreement
     runs-on: ubuntu-latest

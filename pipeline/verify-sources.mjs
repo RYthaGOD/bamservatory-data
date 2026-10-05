@@ -38,6 +38,17 @@ const EVIDENCE = arg("--evidence", process.env.VERIFY_EVIDENCE || "");
 const BAM_API = arg("--bam", process.env.BAM_API_BASE || "https://explorer.bam.dev/api/v1");
 const KOBE = arg("--kobe", process.env.KOBE_API_BASE || "https://kobe.mainnet.jito.network");
 const RPC = arg("--rpc", process.env.SOLANA_RPC_URL || "");
+// Where on-chain stake is read if the configured endpoint will not answer.
+//
+// One endpoint was a single point of failure. From 2026-09-24T18:37Z to
+// 2026-09-26T04:22Z the configured provider answered HTTP 403 to every run, and
+// 34 hours of verification went unrecorded while capture carried on — nothing
+// about the chain had changed, only one company's view of it was unavailable.
+// Any honest RPC returns the same vote accounts, so a second one is a fallback,
+// not a different measurement. The public endpoint is rate-limited, which one
+// call per verification cycle does not approach. Set SOLANA_RPC_FALLBACK_URL to
+// another endpoint, or to empty to disable the fallback.
+const RPC_FALLBACK = process.env.SOLANA_RPC_FALLBACK_URL ?? "https://api.mainnet-beta.solana.com";
 
 // The columns, every earlier version of them, and the migration between them
 // live in verification-schema.mjs. Kept there rather than here because a header
@@ -50,6 +61,32 @@ const getJSON = async (url, init) => {
   const r = await fetch(url, { ...init, signal: AbortSignal.timeout(45000) });
   if (!r.ok) throw new Error(`${url} -> HTTP ${r.status}`);
   return r.json();
+};
+
+// Current vote accounts from the first endpoint that returns any. An HTTP error,
+// a JSON-RPC error and an empty list all count as no answer. Every endpoint
+// failing still fails the run, which writes no row — the same as before.
+const voteAccounts = async () => {
+  const failures = [];
+  for (const url of [RPC, RPC_FALLBACK].filter(Boolean)) {
+    try {
+      const j = await getJSON(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0", id: 1, method: "getVoteAccounts",
+          params: [{ keepUnstakedDelinquents: false }],
+        }),
+      });
+      if (!j?.result?.current?.length)
+        throw new Error(`${url} -> no vote accounts${j?.error ? ` (${j.error.message ?? j.error.code})` : ""}`);
+      if (failures.length) console.log(`  vote accounts from fallback ${new URL(url).host}; ${failures.join("; ")}`);
+      return j.result;
+    } catch (e) {
+      failures.push(e.message);
+    }
+  }
+  throw new Error(failures.join("; "));
 };
 
 // The three sources return differently-shaped payloads; normalise to an array.
@@ -65,19 +102,12 @@ const main = async () => {
     // and the whole point is to check *their* claim, not a restatement of it.
     getJSON(`${BAM_API}/bam_stake`),
     getJSON(`${KOBE}/api/v1/validators`),
-    getJSON(RPC, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0", id: 1, method: "getVoteAccounts",
-        params: [{ keepUnstakedDelinquents: false }],
-      }),
-    }),
+    voteAccounts(),
   ]);
 
   const explorer = rowsOf(explorerRaw);
   const kobe = rowsOf(kobeRaw);
-  const vote = voteRaw?.result;
+  const vote = voteRaw;
   if (!explorer.length) die("BAM explorer returned no validators");
   if (!kobe.length) die("Kobe returned no validators");
   if (!vote?.current?.length) die("RPC returned no vote accounts");
