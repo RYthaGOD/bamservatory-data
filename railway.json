@@ -2,7 +2,12 @@
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
     "builder": "DOCKERFILE",
-    "dockerfilePath": "Dockerfile"
+    "dockerfilePath": "Dockerfile",
+    "watchPatterns": [
+      "/Dockerfile",
+      "/railway.json",
+      "/pipeline/**"
+    ]
   },
   "deploy": {
     "startCommand": "/app/pipeline/entrypoint.sh",

@@ -40,6 +40,13 @@ RUN apt-get update \
 
 COPY --from=collector /src/target/release/bam-net /usr/local/bin/bam-net
 COPY --from=collector /src/BAM_NET_REF /app/BAM_NET_REF
+# Only this Dockerfile, pipeline/ and railway.json reach the running service, and
+# railway.json's watchPatterns redeploy on exactly those three. Keep them in step:
+# a COPY of anything else needs a matching pattern, or changes to it will not
+# deploy. Every other commit here is data, and until 2026-10-06 each one
+# restarted all three collectors — about 98 times a day. Because /data is a
+# volume, a restart stops the old container before the new one runs, which cost
+# the primary 22 minutes of captures on 2026-10-05 when Railway deployed slowly.
 COPY pipeline/ /app/pipeline/
 RUN chmod +x /app/pipeline/*.sh
 
