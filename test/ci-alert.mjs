@@ -45,7 +45,9 @@ test("a failure or a cancellation is red; skips alone say nothing", () => {
 
 test("an incident is one issue, one mention, and one close", () => {
   const f = fakeGh();
-  assert.equal(alert({ env: env(red), gh: f.gh }), "opened");
+  // The assertions below compare dates, so the clock must not supply any of them.
+  const first = new Date("2026-10-05T00:00:00Z");
+  assert.equal(alert({ env: env(red), gh: f.gh, now: first }), "opened");
   assert.equal(f.issues.length, 1);
   assert.equal(f.issues[0].title, "CI red: verify");
   assert.deepEqual(f.issues[0].labels, [LABEL]);
