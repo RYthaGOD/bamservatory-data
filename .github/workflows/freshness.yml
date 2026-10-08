@@ -21,11 +21,11 @@ permissions:
 jobs:
   freshness:
     name: published data is current
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
       - run: node test/freshness.mjs
@@ -38,7 +38,7 @@ jobs:
     name: alert on red
     needs: [freshness]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     # One alert at a time per workflow, so two red runs that finish together
     # update one incident instead of racing to open two.
@@ -49,8 +49,8 @@ jobs:
       contents: read
       issues: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
       - run: node ci-alert.mjs

@@ -35,6 +35,11 @@ permissions:
 
 jobs:
 
+# Runner images are pinned, here and in every workflow in this repo, because
+# ubuntu-latest moves between Ubuntu releases on GitHub's schedule and these jobs
+# depend on what the image ships (zstd, gawk, sha256sum). Move them deliberately,
+# after a green run on the new image, not when the label does.
+#
 # A job that hangs is worse than a job that fails.
 #
 # On 2026-08-18 the archive-integrity job stopped for three hours and twenty-three
@@ -50,10 +55,10 @@ jobs:
 # check.
   archive-integrity:
     name: archive integrity
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # verify.sh needs the real zstd binary, not Node's implementation, so that
       # the check does not depend on the same runtime that wrote the files.
@@ -82,10 +87,10 @@ jobs:
 
   pipeline-guards:
     name: pipeline guards
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # gawk, not the mawk ubuntu ships as `awk`: flatten.awk uses
       # three-argument match(), which mawk ignores silently.
@@ -128,7 +133,7 @@ jobs:
       # back to a second endpoint. Asserted in both directions against the real
       # script: a refusal, a JSON-RPC error and an empty answer fall back, and
       # when every endpoint fails no row is written at all.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
       - name: verification survives one RPC provider refusing
@@ -136,11 +141,11 @@ jobs:
 
   cross-vantage:
     name: cross-vantage agreement
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           # zstd support in node:zlib landed in 23.8. compare.mjs relies on it.
           node-version: "24"
@@ -171,13 +176,20 @@ jobs:
       - name: and each condition of it, isolated
         run: node test/compare-relabel-synthetic.mjs
 
+      # The second thing it forgives: a witness that saw less of one node for
+      # one capture, or that matches a torn primary capture's node list. Same
+      # standard - every condition has a case that fails without it, and real
+      # archived days are replayed without REVIEWED.tsv in both directions.
+      - name: what the comparison excuses as sampling
+        run: node test/compare-sampling.mjs
+
   evidence-recompute:
     name: verification evidence reproduces published rows
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
       - run: node test/recompute-failures.mjs
@@ -185,11 +197,11 @@ jobs:
 
   freshness:
     name: published data is current
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
       - run: node test/freshness.mjs
@@ -201,7 +213,7 @@ jobs:
     name: alert on red
     needs: [archive-integrity, pipeline-guards, cross-vantage, evidence-recompute, freshness]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     # One alert at a time per workflow, so two red runs that finish together
     # update one incident instead of racing to open two.
@@ -212,8 +224,8 @@ jobs:
       contents: read
       issues: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
       - run: node ci-alert.mjs

@@ -20,6 +20,11 @@
 # reported at all. They stay because they are the evidence that prompted the
 # rule, and because a rule is easier to trust beside the incident it came from.
 #
+# Since 2026-10-08 the same holds for a witness that saw less of a single node
+# for one capture, and for a witness matching a torn primary capture's node list.
+# 31 of the entries below are of those shapes and would no longer be reported.
+# They stay for the same reason.
+#
 # vantage	minute	reviewed_at	explanation
 ams	2026-08-11T15:21	2026-08-12	Partial API response at the Amsterdam collector: 10 nodes and 77 validators against 373 at the primary, recovering completely on the next capture. The record is internally consistent (its headline stake matches the sum of its own nodes and validators), so it is a coherent but incomplete view served to one vantage, not a divergent one. flatten.awk now withholds responses like this from the series; the raw capture is archived either way.
 sin	2026-08-12T04:18	2026-08-13	The BAM API degraded for all three vantages from about 04:16 to 04:23 and recovered in steps. At this minute every vantage held a torn read — the primary's own header stake (50250585.36) disagreed with the sum of its nodes (65421908.80), and Singapore's disagreed with its own too — so the node sets differ because each collector caught a different instant of the same broken response, not because they were served different views. All three captures are archived; none of them enter the series.

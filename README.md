@@ -176,6 +176,18 @@ ignores the file entirely.
 
 It records that someone looked. It is not a way to make a red run green.
 
+Two shapes of difference are recognised without a ledger entry, because each
+would need one every few days and every one on record was explained as sampling
+rather than divergence: a fleet relabelling
+caught mid-transition, and a witness that saw less of a single node for one
+capture — that node absent or short of some validators, every other node
+identical to the cent, and the node whole again at that witness a minute either
+side. A witness whose node list matches a torn primary capture exactly is
+treated the same way. Each such minute is still printed with the reason it was
+excused, and `--strict` fails all of them. The exact conditions are in
+`compare.mjs`, and `test/compare-sampling.mjs` asserts each one in both
+directions.
+
 Requested comparisons fail if a selected vantage has no overlapping data, a
 day has no shared minutes, or a capture cannot be read or validated. Every
 finding is checked against the review ledger; reporting does not stop after
@@ -230,6 +242,7 @@ left for someone to find in a row count.
 | `test/rotate-evidence.sh` | Asserts what `rotate.sh` may delete, in both directions. Runs in CI |
 | `test/compare-relabel.mjs` | Asserts what `compare.mjs` forgives, against the real archive. Runs in CI |
 | `test/compare-relabel-synthetic.mjs` | The same, with each condition isolated on synthetic captures. Runs in CI |
+| `test/compare-sampling.mjs` | Asserts what `compare.mjs` excuses as sampling, synthetic and real, both directions. Runs in CI |
 
 A Railway cron job would spawn a fresh container per run, and a volume admits
 only one active deployment — so capture runs as a service with an internal loop
