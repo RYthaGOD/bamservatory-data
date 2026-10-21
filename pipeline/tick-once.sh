@@ -48,7 +48,8 @@ fi
 #
 #   touch "$CAPTURE_DIR/.accept_collapse"
 #
-# The next collapsed capture is then recorded as observed and the file removed.
+# The next capture, if it is collapsed, is then recorded as observed. The file is
+# removed either way, so an acceptance never carries over to a later response.
 prev_row=$(tail -n1 "$SUMMARY")
 prev_nodes=$(printf '%s' "$prev_row" | cut -d, -f4)
 prev_vals=$(printf '%s' "$prev_row" | cut -d, -f5)

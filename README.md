@@ -130,6 +130,8 @@ release recorded it, so the dashboard published BAM at 0.12% of Solana stake.
 A collapse is now held until the API recovers. The freshness check reports it
 within 90 minutes. If the collapse is real, `touch $CAPTURE_DIR/.accept_collapse`
 records the next collapsed capture as observed, and the file is removed.
+The acceptance applies only to the next capture. If that capture is empty or
+malformed, the file is removed unused, so you need to create it again.
 
 Withheld captures are listed in `partial.log` on the volume, and the raw record
 is archived either way — what is withheld is the interpretation, never the

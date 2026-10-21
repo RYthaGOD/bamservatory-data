@@ -57,6 +57,17 @@ function consumeaccept(  q) {
   gsub(/'/, "'\\''", q)
   system("rm -f '" q "'")
 }
+# An acceptance answers the capture it lands on. One that lands on a capture
+# skipped before the guard — empty or malformed — must not survive it: the
+# next sub-quarter response would then be recorded as operator-accepted when
+# it is not the one the operator looked at. On 2026-10-21 the API spent hours
+# returning nothing between its collapsed responses, so that was the likely
+# case, not the edge one.
+function discardaccept(when, why) {
+  if (!accepted()) return
+  consumeaccept()
+  skiplog(sprintf("%s operator acceptance discarded unused — %s", when, why))
+}
 function skiplog(msg) {
   if (SKIPLOG == "") return
   print msg >> SKIPLOG
@@ -91,6 +102,7 @@ function skiplog(msg) {
         substr(line, 8, 20), gsub(/"ts":"/, "&", line) >> SKIPLOG
       close(SKIPLOG)
     }
+    discardaccept(substr(line, 8, 20), "malformed capture")
     next
   }
 
@@ -121,6 +133,7 @@ function skiplog(msg) {
   # empty response remains in the record, and the effect here is a gap in
   # coverage, which is true, instead of a false measurement.
   if (nodes_seg !~ /"bam_node"/) {
+    discardaccept(ts, "capture had no nodes")
     next
   }
 
