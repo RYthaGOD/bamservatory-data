@@ -16,8 +16,15 @@
 #                        coherent but incomplete view. Must be withheld.
 #   sustained-drop.jsonl A network that genuinely halves and stays halved. Must
 #                        be recorded, after a bounded delay.
+#   collapse-persistent.jsonl
+#                        The shape of 2026-10-21: 16 nodes and 375 validators,
+#                        then one dev node with one validator for eight captures,
+#                        then recovery. Synthetic records, real counts. Must be
+#                        withheld for as long as it lasts, never released on
+#                        persistence alone.
 #
-# A guard that passes only the first is a guard that can freeze the series.
+# A guard that passes only the first is a guard that can freeze the series. One
+# that passes only the second is the guard that published BAM at 0.12%.
 #
 #   ./test/flatten-guard.sh
 
@@ -50,12 +57,14 @@ check() {
 
 # Replay a fixture one capture at a time, exactly as tick-once.sh does: read the
 # previous counts from the summary written so far, then flatten the next record.
+# An optional fourth argument names a capture timestamp: the accept file is
+# created just before that capture is flattened, as an operator would.
 replay() {
-  local fixture="$1" name="$2" streak="$3"
+  local fixture="$1" name="$2" streak="$3" accept_at="${4:-}"
   local sum="$WORK/$name.summary.csv"
   echo "ts,bam_stake,bam_stake_percentage,node_count,validator_count,connected_validators,unconnected_validators,total_node_stake,total_validator_stake,top_node,top_node_share,node_stake_hhi" > "$sum"
   : > "$WORK/$name.partial.log"
-  rm -f "$WORK/$name.streak"
+  rm -f "$WORK/$name.streak" "$WORK/$name.accept"
 
   while IFS= read -r rec; do
     [ -z "$rec" ] && continue
@@ -67,7 +76,8 @@ replay() {
     [[ "$pv" =~ ^[0-9]+$ ]] || pv=0
     local args=(-v SUMMARY="$sum" -v NODES="$WORK/$name.nodes.csv" -v VALS="$WORK/$name.vals.csv"
                 -v PREV_NODES="$pn" -v PREV_VALS="$pv" -v SKIPLOG="$WORK/$name.partial.log")
-    [ "$streak" = "stateful" ] && args+=(-v STREAK_FILE="$WORK/$name.streak")
+    [ "$streak" = "stateful" ] && args+=(-v STREAK_FILE="$WORK/$name.streak" -v ACCEPT_FILE="$WORK/$name.accept")
+    [ -n "$accept_at" ] && [[ "$rec" == *"\"ts\":\"$accept_at\""* ]] && touch "$WORK/$name.accept"
     printf '%s\n' "$rec" | "$AWK" -f "$FLATTEN" "${args[@]}"
   done < "$fixture"
 }
@@ -93,6 +103,36 @@ check "and every one after it"                  "$(has_ts drop 2026-09-01T00:05:
 check "exactly two captures were withheld"      "$(withheld drop)" "2"
 check "the release is logged, not silent"       "$(grep -c 'persisted past' "$WORK/drop.partial.log" || true)" "1"
 
+# Persistence is what separates a failed read from a real change — until the
+# read stays failed. 2026-10-21 held the API at one node for longer than any
+# bounded release, so the third capture of it went into the series as observed.
+echo "── a collapse is held for as long as it lasts ──"
+replay "$FIX/collapse-persistent.jsonl" collapse stateful
+check "only the healthy captures and the recovery are in the series" "$(rows collapse)" "3"
+check "the third collapsed capture is not released"  "$(has_ts collapse 2026-10-21T01:22:38Z)" "no"
+check "nor the last"                                 "$(has_ts collapse 2026-10-21T01:27:38Z)" "no"
+check "the recovery is kept"                         "$(has_ts collapse 2026-10-21T01:28:38Z)" "yes"
+check "every collapsed capture is logged as withheld" "$(withheld collapse)" "8"
+check "and none as persisted"                        "$(grep -c 'persisted past' "$WORK/collapse.partial.log" || true)" "0"
+
+# A collapse can be real, and then a person says so. Acceptance answers the
+# collapse in front of it: the capture it lands on is recorded, the file is gone,
+# and the smaller network is the baseline from then on.
+echo "── an operator can accept a collapse, once ──"
+replay "$FIX/collapse-persistent.jsonl" accepted stateful 2026-10-21T01:23:38Z
+check "the captures before acceptance stay withheld" "$(has_ts accepted 2026-10-21T01:22:38Z)" "no"
+check "the accepted capture is recorded"             "$(has_ts accepted 2026-10-21T01:23:38Z)" "yes"
+check "and the rest of the run after it"             "$(has_ts accepted 2026-10-21T01:27:38Z)" "yes"
+check "the acceptance is logged"                     "$(grep -c 'collapse accepted by operator' "$WORK/accepted.partial.log" || true)" "1"
+check "the accept file is consumed"                  "$([ -e "$WORK/accepted.accept" ] && echo present || echo gone)" "gone"
+
+# An accept file left lying around must not wave through the next incident.
+echo "── an acceptance with nothing to accept is discarded ──"
+replay "$FIX/collapse-persistent.jsonl" stale stateful 2026-10-21T01:19:38Z
+check "it is removed on a healthy capture"           "$(grep -c 'discarded unused' "$WORK/stale.partial.log" || true)" "1"
+check "and the collapse after it is still withheld"  "$(withheld stale)" "8"
+check "so none of it reaches the series"             "$(rows stale)" "3"
+
 # A record written twice with no newline between them is still one line. Nothing
 # below parses JSON, so the segment boundaries run through both copies and the
 # counts come out summed — raw/2026/06/29 holds exactly one such line, and it
@@ -112,6 +152,8 @@ echo "── with no state file the guard stands down ──"
 replay "$FIX/sustained-drop.jsonl" rebuild stateless
 check "every capture is flattened during a rebuild" "$(rows rebuild)" "6"
 check "nothing is withheld"                         "$(withheld rebuild)" "0"
+replay "$FIX/collapse-persistent.jsonl" rebuild-collapse stateless
+check "a collapse is flattened during a rebuild too" "$(rows rebuild-collapse)" "11"
 
 echo
 if [ "$fails" -eq 0 ]; then
