@@ -10,7 +10,8 @@
 #
 # Required -v vars: SUMMARY, NODES, VALS (output file paths).
 # Optional -v vars: PREV_NODES, PREV_VALS (counts from the previous summary row),
-#                   STREAK_FILE, SKIPLOG — see the partial-response guard below.
+#                   STREAK_FILE, SKIPLOG, ACCEPT_FILE — see the partial-response
+#                   guard below.
 
 # Make a value safe to write into an unquoted CSV field.
 #
@@ -40,6 +41,26 @@ function writestreak(v) {
   if (STREAK_FILE == "") return
   printf "%d\n", v > STREAK_FILE
   close(STREAK_FILE)
+}
+
+# The operator's way of saying a collapse is real. Its presence is the whole
+# message, so an empty file counts: getline returns 0 for that and -1 only when
+# the file cannot be opened.
+function accepted(  line, r) {
+  if (ACCEPT_FILE == "") return 0
+  r = (getline line < ACCEPT_FILE)
+  close(ACCEPT_FILE)
+  return r >= 0
+}
+function consumeaccept(  q) {
+  q = ACCEPT_FILE
+  gsub(/'/, "'\\''", q)
+  system("rm -f '" q "'")
+}
+function skiplog(msg) {
+  if (SKIPLOG == "") return
+  print msg >> SKIPLOG
+  close(SKIPLOG)
 }
 
 {
@@ -182,16 +203,60 @@ function writestreak(v) {
   # during a rebuild is not.
   RATIO = 0.8
   MAX_SKIP = 2
-  if (STREAK_FILE != "" && PREV_NODES + 0 > 0 && PREV_VALS + 0 > 0 &&
-      (ncount < PREV_NODES * RATIO || vcount < PREV_VALS * RATIO)) {
+  # A collapse is not a smaller network either, and persistence cannot tell the
+  # two apart.
+  #
+  # The bounded release above assumes a failed read corrects itself within a
+  # couple of captures. On 2026-10-21 one did not: from 01:20Z the API served a
+  # single dev node holding one validator and 519,552 SOL, against 16 nodes, 375
+  # validators and 159.8M SOL a capture earlier, while Kobe went on reporting 375
+  # validators running BAM. The two holds ran out, the third capture was
+  # recorded as observed, and the dashboard published BAM at 0.12% of Solana
+  # stake, run by one node, for as long as the API stayed broken.
+  #
+  # Below COLLAPSE of the previous capture there is no release on persistence.
+  # BAM losing three quarters of its nodes or validators inside one capture
+  # interval is not a change any rollover, relabelling or outage on record has
+  # come close to — the worst real partial view, 2026-07-29, kept 62% of its
+  # validators — and if it ever happens for real, it is an event a person should
+  # confirm rather than one a counter should wave through.
+  #
+  # The objection to withholding indefinitely, above, was that a frozen series
+  # looks healthy. It no longer does: check-freshness.mjs fails once the newest
+  # capture in the published window is 90 minutes old, and that failure is the
+  # alert. So a collapse is held until the API recovers, which needs no one, or
+  # until an operator creates ACCEPT_FILE, which records the next collapsed
+  # capture as observed and is then removed. Acceptance answers the collapse in
+  # front of it only: a file found while nothing is collapsing is removed
+  # unused, so one left behind cannot wave through the next incident unseen.
+  #
+  # Between COLLAPSE and RATIO the bounded release still applies, so a genuine
+  # halving is recorded after two captures exactly as before.
+  COLLAPSE = 0.25
+  guarded = (STREAK_FILE != "" && PREV_NODES + 0 > 0 && PREV_VALS + 0 > 0)
+  collapse = (guarded && (ncount < PREV_NODES * COLLAPSE || vcount < PREV_VALS * COLLAPSE))
+  if (accepted()) {
+    consumeaccept()
+    if (collapse) {
+      skiplog(sprintf("%s collapse accepted by operator — recording it as observed (%d/%d nodes, %d/%d validators vs previous capture)", \
+        ts, ncount, PREV_NODES, vcount, PREV_VALS))
+    } else {
+      skiplog(sprintf("%s operator acceptance discarded unused — no collapse to accept", ts))
+    }
+  } else if (collapse) {
+    # Keeps the words "partial response withheld" so every withheld capture is
+    # counted the same way downstream, whichever rule withheld it.
+    streak = readstreak()
+    writestreak(streak + 1)
+    skiplog(sprintf("%s partial response withheld (%d/%d nodes, %d/%d validators vs previous capture; collapse, hold %d, no release until the API recovers or an operator accepts it)", \
+      ts, ncount, PREV_NODES, vcount, PREV_VALS, streak + 1))
+    next
+  } else if (guarded && (ncount < PREV_NODES * RATIO || vcount < PREV_VALS * RATIO)) {
     streak = readstreak()
     if (streak < MAX_SKIP) {
       writestreak(streak + 1)
-      if (SKIPLOG != "") {
-        printf "%s partial response withheld (%d/%d nodes, %d/%d validators vs previous capture; skip %d of %d)\n", \
-          ts, ncount, PREV_NODES, vcount, PREV_VALS, streak + 1, MAX_SKIP >> SKIPLOG
-        close(SKIPLOG)
-      }
+      skiplog(sprintf("%s partial response withheld (%d/%d nodes, %d/%d validators vs previous capture; skip %d of %d)", \
+        ts, ncount, PREV_NODES, vcount, PREV_VALS, streak + 1, MAX_SKIP))
       next
     }
     # Held for MAX_SKIP captures and still low: treat it as real from here on.
@@ -199,11 +264,8 @@ function writestreak(v) {
     # Deliberately does not repeat the word "withheld" — this line records the
     # opposite decision, and a log where the two cannot be told apart by a plain
     # search is a log that will be miscounted by whoever next tries.
-    if (SKIPLOG != "") {
-      printf "%s reduced capture persisted past %d holds — recording it as observed (%d nodes, %d validators)\n", \
-        ts, MAX_SKIP, ncount, vcount >> SKIPLOG
-      close(SKIPLOG)
-    }
+    skiplog(sprintf("%s reduced capture persisted past %d holds — recording it as observed (%d nodes, %d validators)", \
+      ts, MAX_SKIP, ncount, vcount))
   }
   writestreak(0)
 

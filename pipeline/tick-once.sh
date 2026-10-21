@@ -41,6 +41,14 @@ fi
 # response — a coherent but incomplete view — and withhold it from the series
 # rather than record it as a smaller network. Read before flattening, since the
 # new row is about to become the last line.
+#
+# A collapse — under a quarter of the previous capture — is held until the API
+# recovers, with no release on persistence. If BAM really has shrunk that far,
+# confirm it by creating the accept file on the volume:
+#
+#   touch "$CAPTURE_DIR/.accept_collapse"
+#
+# The next collapsed capture is then recorded as observed and the file removed.
 prev_row=$(tail -n1 "$SUMMARY")
 prev_nodes=$(printf '%s' "$prev_row" | cut -d, -f4)
 prev_vals=$(printf '%s' "$prev_row" | cut -d, -f5)
@@ -50,7 +58,8 @@ prev_vals=$(printf '%s' "$prev_row" | cut -d, -f5)
 tail -n1 "$LOG" | awk -f "$FLATTEN" \
   -v SUMMARY="$SUMMARY" -v NODES="$NODES" -v VALS="$VALS" \
   -v PREV_NODES="$prev_nodes" -v PREV_VALS="$prev_vals" \
-  -v STREAK_FILE="$DIR/.partial_streak" -v SKIPLOG="$DIR/partial.log"
+  -v STREAK_FILE="$DIR/.partial_streak" -v SKIPLOG="$DIR/partial.log" \
+  -v ACCEPT_FILE="$DIR/.accept_collapse"
 
 # Structural-tick check, derived from files (no persistent state).
 ts=$(tail -n1 "$SUMMARY" | cut -d, -f1)

@@ -122,6 +122,15 @@ validators, neither of which was ever true of BAM.
 `flatten.awk` now withholds a capture that collapses against the previous one,
 and releases it if the smaller network is still there two captures later, so a
 genuine change costs a couple of minutes of delay rather than being suppressed.
+
+A collapse, below a quarter of the previous capture's nodes or validators, is
+the exception: it is never released just because it persists. On 2026-10-21 the
+API served one dev node with one validator for hours, and the two-capture
+release recorded it, so the dashboard published BAM at 0.12% of Solana stake.
+A collapse is now held until the API recovers. The freshness check reports it
+within 90 minutes. If the collapse is real, `touch $CAPTURE_DIR/.accept_collapse`
+records the next collapsed capture as observed, and the file is removed.
+
 Withheld captures are listed in `partial.log` on the volume, and the raw record
 is archived either way — what is withheld is the interpretation, never the
 record.
