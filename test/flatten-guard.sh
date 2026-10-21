@@ -22,6 +22,8 @@
 #                        then recovery. Synthetic records, real counts. Must be
 #                        withheld for as long as it lasts, never released on
 #                        persistence alone.
+#   collapse-empty.jsonl Healthy captures, an empty response as the API served
+#                        from 02:17Z that day, then a collapsed one.
 #
 # A guard that passes only the first is a guard that can freeze the series. One
 # that passes only the second is the guard that published BAM at 0.12%.
@@ -132,6 +134,16 @@ replay "$FIX/collapse-persistent.jsonl" stale stateful 2026-10-21T01:19:38Z
 check "it is removed on a healthy capture"           "$(grep -c 'discarded unused' "$WORK/stale.partial.log" || true)" "1"
 check "and the collapse after it is still withheld"  "$(withheld stale)" "8"
 check "so none of it reaches the series"             "$(rows stale)" "3"
+
+# The API spent hours on 2026-10-21 returning nothing between collapsed
+# responses. An acceptance made then must be spent on the empty capture it lands
+# on, not carried to whatever sub-quarter response turns up next.
+echo "── an acceptance that lands on an empty capture is discarded ──"
+replay "$FIX/collapse-empty.jsonl" empty stateful 2026-10-21T02:17:09Z
+check "it is logged as discarded"                    "$(grep -c 'discarded unused — capture had no nodes' "$WORK/empty.partial.log" || true)" "1"
+check "the file is gone"                             "$([ -e "$WORK/empty.accept" ] && echo present || echo gone)" "gone"
+check "and the collapse after it is still withheld"  "$(has_ts empty 2026-10-21T02:18:38Z)" "no"
+check "so it is not recorded as accepted"            "$(grep -c 'collapse accepted by operator' "$WORK/empty.partial.log" || true)" "0"
 
 # A record written twice with no newline between them is still one line. Nothing
 # below parses JSON, so the segment boundaries run through both copies and the
